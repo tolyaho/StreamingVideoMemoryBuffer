@@ -62,9 +62,6 @@ huggingface/
 # Local tooling
 .claude/
 
-# Private / working notes (not part of the deliverable repo)
-notes/
-
 # Local datasets / videos (too large for GitHub; use scripts/download_video_sample.py)
 /data/
 
