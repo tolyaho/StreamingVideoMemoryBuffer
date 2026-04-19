@@ -6,7 +6,7 @@ Build a lightweight streaming Video-LLM memory system that can watch a video str
 
 ## Design principles
 
-The system is built around four principles. First, **recent visual context is valuable and should be stored densely**, because a simple recent-window baseline already performs surprisingly well on current streaming benchmarks. Second, **older context should be stored more selectively and more compactly** to keep memory bounded. Third, **query answering should not read the entire stored history**; instead, it should retrieve a small relevant subset of memory. Fourth, **text summaries are auxiliary**, useful for routing and readability, but the primary memory representation remains visual. These principles are directly motivated by SimpleStream’s recency result, FluxMem’s hierarchical compression, VideoTree’s coarse-to-fine retrieval, and IXC2.5-OmniLive’s perception–memory–reasoning split.
+The system is built around five principles. First, **recent visual context is valuable and should be stored densely**, because a simple recent-window baseline already performs surprisingly well on current streaming benchmarks. Second, **older context should be stored more selectively and more compactly** to keep memory bounded. Third, **query answering should not read the entire stored history**; instead, it should retrieve a small relevant subset of memory. Fourth, **text summaries are auxiliary**, useful for routing and readability, but the primary memory representation remains visual. Fifth, **the lower the memory tier, the more the representation relies on raw vision; the higher the compression tier, the more it relies on language** — recent windows are pure visual embeddings; episodic entries add **short** per-window Florence captions for routing plus a **longer** episode string built at flush from **`<DETAILED_CAPTION>`** on each member window’s representative frame; long-term events condense episode text together with a few real frames via a VLM. These principles are directly motivated by SimpleStream’s recency result, FluxMem’s hierarchical compression, VideoTree’s coarse-to-fine retrieval, and IXC2.5-OmniLive’s perception–memory–reasoning split.
 
 ## Non-goals
 
@@ -64,28 +64,37 @@ Single frames are too weak as semantic units: they often miss temporal continuit
 
 ### Purpose
 
-Convert each local window into a compact visual representation suitable for storage and retrieval.
+Convert each local window into a compact visual representation suitable for storage and retrieval, while preserving short-term temporal dynamics.
 
 ### Main representation
 
-Each window receives a **visual embedding**. This is the primary memory representation.
+Each window receives a **clip embedding** produced by a video-language model. This is the primary memory representation stored in all three memory tiers.
 
-### Optional secondary representation
+### Retrieval encoder — X-CLIP base-patch32
 
-For promoted windows only, generate:
-- `summary_text`
-- `summary_embedding`
+The retrieval encoder is **X-CLIP** (`microsoft/xclip-base-patch32`), a pretrained video-language model that produces a single 512-dim embedding from a short clip of frames. Unlike a static image encoder, X-CLIP integrates temporal information across multiple frames, making it sensitive to motion and short-term event dynamics such as actions, transitions, and scene changes.
 
-### Recommended model split
+Each window is encoded by uniformly sampling **up to 8 frames** from its frame list (the stream reader may yield fewer distinct frames per window; boundary frames are repeated as needed) and passing them together through X-CLIP’s video encoder. The result is one L2-normalised clip embedding per window. Text queries are encoded with X-CLIP’s matching text encoder, keeping both query and memory in the same joint retrieval space.
 
-- **Retrieval encoder**: a joint image-text encoder such as SigLIP/SigLIP2-style encoder
-- **Summary model**: a lightweight captioning or VLM component for local and higher-level notes
+### Why X-CLIP instead of a static image encoder
 
-The architecture deliberately separates retrieval from summarization. This mirrors the broader lesson from recent systems: visual memory should remain visual-first, while textual summaries are useful as auxiliary abstractions. StreamBridge explicitly stores multimodal memory rather than reducing everything to text, while FluxMem’s main memory remains visual and hierarchical. 
+A single still frame captures appearance but discards motion. Events such as scoring a goal, entering or leaving a scene, a fall, or the start of a celebration are poorly represented by any one frame because the discriminative signal lies in what changed across the window. X-CLIP was trained to align short video clips with text descriptions, so its video embeddings are inherently sensitive to these temporal patterns. This improves retrieval quality for action-based queries without requiring a generative VLM, a trained projector, or any fine-tuning.
+
+### Summary encoder — Florence-2-base
+
+A separate captioning model (**Florence-2-base**, `microsoft/Florence-2-base`) is used only for text, not retrieval. **At ingest**, it runs **`<CAPTION>`** on each window’s representative (middle) frame; the result is stored as `WindowEntry.summary_text` and supports the retriever’s summary-similarity term and lightweight logging. **When an episode is flushed**, the same model runs again with **`<DETAILED_CAPTION>`** on **each** member window’s stored representative frame; those strings are **concatenated** (with blank lines between windows) into `EpisodeEntry.summary_text`. That costs one extra Florence forward pass per window per episode at flush time, but yields a richer episodic text layer than stitching short captions alone.
+
+The architecture deliberately separates retrieval (X-CLIP clip embeddings) from summarisation (Florence-2). Retrieval remains visual-first and temporally aware; text summaries are an auxiliary semantic index that grows more descriptive at the episodic tier.
+
+### Summary pipeline
+
+- **Per window (ingest)**: Florence-2 `<CAPTION>` on the representative frame → `WindowEntry.summary_text`; the RGB representative frame is also kept on the entry for later multimodal use.
+- **Per episode (flush)**: for each member window in order, Florence-2 **`<DETAILED_CAPTION>`** on that window’s representative frame → concatenate into `EpisodeEntry.summary_text` (falls back to the short caption or a time template if a frame is missing).
+- **Per event (consolidation)**: when `use_vlm=True`, **Qwen2.5-VL-3B-Instruct** receives the episode summary strings plus **two** representative frames per episode (windows closest to the episode’s visual centroid, in time order) and returns one concise event sentence; otherwise a template stitch over episode texts is used.
 
 ### Why not store raw pixels
 
-The system stores **encoder-produced visual features**, not raw pixels. FluxMem is explicit that memory is built from visual tokens produced by the vision encoder, then compressed via Temporal Adjacency Selection and Spatial Domain Consolidation.
+The system stores encoder-produced embeddings as the **primary** evidence, not full video. One **representative RGB frame** per window is retained only where Florence or the event VLM needs pixels; that keeps footprint small compared to storing every sampled frame.
 
 ---
 
@@ -195,7 +204,7 @@ Generate readable semantic notes at multiple temporal scales.
 ### Summary levels
 
 - **Local note**: attached to promoted windows
-- **Episode summary**: attached to merged short action spans
+- **Episode summary**: attached to merged short action spans; built from concatenated detailed Florence captions at flush (see **Summary pipeline** above)
 - **Event summary**: attached to longer high-level activities
 
 ### Important design choice
@@ -225,7 +234,7 @@ Each episode stores:
 - time range
 - centroid visual embedding
 - list of member windows
-- short episode summary
+- episode summary text: concatenated **`<DETAILED_CAPTION>`** outputs over member representative frames (see **Summary pipeline** under Perception Encoder above)
 
 ### Event building
 

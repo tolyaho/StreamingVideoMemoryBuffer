@@ -21,10 +21,12 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 - [x] Architecture locked: hierarchical visual memory + multi-scale summaries
 - [x] Write path is query-agnostic (store by recency + novelty + capacity)
 - [x] Read path is query-aware (coarse-to-fine retrieval)
-- [x] Encoder choice: SigLIP ViT-B/16 (google/siglip-base-patch16-224, 768-dim)
+- [x] Encoder choice: X-CLIP ViT-B/32 (microsoft/xclip-base-patch32, 512-dim, temporally-aware clip embeddings)
 - [x] Summary model choice: Florence-2-base (microsoft/Florence-2-base, 270M)
-- [x] Event fusion model: Qwen2.5-1.5B-Instruct (text-only, for event summary fusion)
-- [x] Reasoning: text-only via Florence-2 captions → Qwen prompt (no visual projector)
+- [x] Event fusion model: Qwen2.5-VL-3B-Instruct (multimodal — episode texts + 2 frames per episode)
+- [x] Summary gradient: lower tier = more visual; higher tier = more text
+- [x] Episode summary: concatenate per-window Florence <DETAILED_CAPTION> outputs at episode flush
+- [x] Event summary: Qwen2.5-VL sees episode summaries (text) + 2 representative frames per episode
 - [x] Evaluation style decided: qualitative + precision@k on synthetic + baseline comparison
 - [x] Research notes written (related_work_notes.md)
 - [x] Architecture document written (ARCHITECTURE.md)
@@ -45,15 +47,13 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 - [x] RawWindow dataclass (window_id, start_time, end_time, frames, representative_frame)
 - [x] StreamReader: 1 fps sampling, OpenCV-based, lazy generator
 - [x] StreamReader.synthetic_stream() for demos without real video
-- [x] Window duration: 5 sec default
+- [x] Window duration: 5 sec library default (`scripts/main.py` overrides to 3 sec)
 
 ### Perception encoder (perception_encoder.py)
-- [x] PerceptionEncoder wrapping SigLIP ViT-B/16
-- [x] encode_frames(): mean-pools frame embeddings, L2-normalised
-- [x] encode_text(): L2-normalised text embedding in same space
+- [x] PerceptionEncoder wrapping X-CLIP ViT-B/32 (up to 8 frames sampled per window; short windows repeat boundary frames)
+- [x] encode_frames(): temporal clip embedding via X-CLIP MIT, L2-normalised
+- [x] encode_text(): L2-normalised text embedding in same joint space
 - [x] encode_window() convenience wrapper
-- [x] MockEncoder for fast demos (no model download needed)
-- [x] MockEncoder.add_query() for controlled retrieval demos
 
 ### Memory writer (memory_writer.py)
 - [x] Tier 1 — Recent memory: fixed-capacity deque, dense storage
@@ -64,12 +64,13 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
   - [x] Pending episode snapshot for live queryability
 - [x] Tier 3 — Long-term memory: greedy semantic-temporal clustering (SDC-inspired)
   - [x] Centroid visual embedding
-  - [x] 1-3 representative window IDs
+  - [x] 2 representative windows per episode (closest to episode centroid), IDs stored
   - [x] Summary text + optional summary embedding
+  - [x] episode_frames passed to summary_fn for VLM event fusion
 - [x] update() online per-window call
 - [x] finalize() end-of-stream flush
 - [x] get_searchable_episodes() including in-progress episode
-- [x] get_grounding_windows() from window archive (not recent queue)
+- [x] get_grounding_windows() from window archive (available helper; current retriever grounding uses recent queue)
 - [x] text_encode_fn hook for summary embeddings
 - [x] stats() diagnostics
 
@@ -77,10 +78,10 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 - [x] Template mode (fast, no model)
 - [x] Florence-2 captioning mode (use_model=True)
   - [x] caption_frame() for single frame
-  - [x] caption_episode() on representative window using <DETAILED_CAPTION>
-- [x] Qwen2.5-1.5B event fusion mode (use_llm=True)
-  - [x] _fuse_with_llm() fuses episode summaries into one event sentence
-- [x] __call__ dispatch: WindowEntry list → episode summary, EpisodeEntry list → event summary
+  - [x] caption_episode(): run `<DETAILED_CAPTION>` on each member window's representative frame and concatenate
+- [x] Qwen2.5-VL event fusion mode (use_vlm=True)
+  - [x] _fuse_with_vlm(): episode texts + 2 frames per episode → one event sentence
+- [x] __call__(entries, episode_frames=None) dispatch
 - [x] Resilient: all model failures fall back to template
 
 ### Retriever (retriever.py)
@@ -103,30 +104,38 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 - [x] retrieve(query_embedding, top_k) cosine search over recent only
 - [x] stats()
 
+### Pipeline runner (scripts/main.py)
+- [x] End-to-end streaming loop: StreamReader → PerceptionEncoder → SummaryBuilder → HierarchicalMemoryWriter
+- [x] Per-window Florence-2 captioning with live logging
+- [x] Box-formatted episode and event output as they are flushed, including wrapped multiline summaries
+- [x] Final stats footer (windows, episodes, events, elapsed time)
+- [x] This script is a write-path / summarization demo; retrieval is exercised separately via `HierarchicalRetriever`
+
 ### Data download (scripts/download_video_sample.py)
 - [x] StreamingBench annotation + media download
 - [x] Shard-mode: extracts all 50 videos in one zip
 - [x] Sample-mode: extracts single video
 - [x] Zip member matching: exact path → normalised basename → sample ID from directory name
 - [x] __MACOSX entries filtered out
-- [x] QA JSON saved per sample, manifest saved per shard
+- [x] QA JSON saved per sample
 
 ---
 
 ## DATA & VIDEO
 
-- [ ] Download StreamingBench shard (run: python scripts/download_video_sample.py --keep-zip)
-- [ ] Verify at least one video loads correctly with StreamReader
+- [x] Download StreamingBench sample (sample_1 present at data/)
+- [x] Verify at least one video loads correctly with StreamReader
+- [x] Verify 1 fps sampling produces reasonable windows on real video
 - [ ] Pick 1-3 representative videos for notebook demo (aim for 20-60 min each)
 - [ ] Prepare 5-8 example queries matched to video content
-- [ ] Verify 1 fps sampling produces reasonable windows on real video
 
 ---
 
 ## NOTEBOOK (solution.ipynb)
 
 ### Structure — sections needed
-- [ ] Title + architecture overview
+- [x] Title + architecture overview (approach rationale + architecture writeup)
+- [x] Architecture diagram (architecture.svg referenced in notebook)
 - [ ] Setup cell (imports, path, config flags)
 - [ ] Data structures section with rationale
 - [ ] Perception encoder section with rationale
@@ -147,12 +156,11 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 ### Still needed in notebook
 - [ ] Run full pipeline with real video (swap USE_REAL_CLIP=True, VIDEO_PATH=...)
 - [ ] Show actual sampled frames from real video with timestamps
-- [ ] Show real Florence-2 captions on representative episode frames
-- [ ] Show real SigLIP similarity scores on real queries
+- [ ] Show real concatenated Florence-2 `<DETAILED_CAPTION>` episode summaries
+- [ ] Show real X-CLIP similarity scores on real queries
 - [ ] Example queries on real video content with retrieved thumbnails displayed
 - [ ] Side-by-side: baseline retrieval vs hierarchical retrieval on same query
 - [ ] Note obvious failure cases from real video
-- [ ] Architecture diagram (one figure showing the full pipeline)
 - [ ] Final conclusion section answering the assignment questions explicitly
 
 ### Assignment questions the notebook must answer
@@ -171,9 +179,9 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 ## EVALUATION
 
 - [x] Evaluation style decided: qualitative + precision@k + baseline comparison
-- [x] Precision@k on synthetic stream (known ground-truth scene assignments)
-- [x] Baseline comparison table (earliest hit, hit count)
-- [x] Memory tier size plots over time
+- [ ] Precision@k on synthetic stream (known ground-truth scene assignments)
+- [ ] Baseline comparison table (earliest hit, hit count)
+- [ ] Memory tier size plots over time
 - [ ] Qualitative retrieval inspection on real video
 - [ ] Side-by-side baseline vs hierarchical on real queries
 - [ ] Note where recent-window is already enough
@@ -208,20 +216,21 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 
 | Parameter | Value |
 |-----------|-------|
-| Retrieval encoder | SigLIP ViT-B/16 (768-dim) |
+| Retrieval encoder | X-CLIP ViT-B/32 (512-dim, up to 8-frame clip) |
 | Summary model | Florence-2-base |
-| Event fusion | Qwen2.5-1.5B-Instruct |
+| Event fusion | Qwen2.5-VL-3B-Instruct |
 | Sampling rate | 1 fps |
-| Window duration | 5 sec |
-| Recent capacity | 15-20 windows |
-| Episodic capacity | 30-50 entries |
-| Episode max gap | 10 sec |
+| Window duration | 3 sec |
+| Recent capacity | 20 windows |
+| Episodic capacity | 50 entries |
+| Episode max gap | 4 sec |
 | Episode min sim | 0.70 |
-| Event max gap | 45 sec |
+| Event max gap | 15 sec |
 | Event min sim | 0.55 |
-| Episodic merge batch | 8-10 |
+| Episodic merge batch | 10 |
 | Retrieval top-M (coarse) | 2-3 events |
 | Retrieval top-K (fine) | 4-5 episodes |
 | Neighbour radius | 1 |
 | Scoring weights | α=0.65 visual, β=0.30 summary, γ=0.05 recency |
-| Baseline window | 15 windows |
+| Baseline window | 10 windows |
+| Novelty threshold | 0.05 (real video; 0.25 default) |
