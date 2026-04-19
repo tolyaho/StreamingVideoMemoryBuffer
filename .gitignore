@@ -43,6 +43,7 @@ notebooks/reference.ipynb
 .env
 .env.*
 !.env.example
+private_tokens.py
 
 # OS
 .DS_Store
