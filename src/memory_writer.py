@@ -28,13 +28,18 @@ class HierarchicalMemoryWriter:
         recent_capacity: max WindowEntries in recent memory.
         episodic_capacity: max EpisodeEntries before consolidation is triggered.
         novelty_threshold: min cosine distance (1 - sim) to promote a window.
-        episode_max_gap: max seconds between windows to merge into one episode.
+        episode_max_gap: max seconds between window end and next window start
+            to merge into one episode (smaller = stricter / shorter episodes).
         episode_min_sim: min cosine sim to the episode centroid to keep merging.
         episode_max_len: hard cap on windows per episode. None = no cap.
-        event_max_gap: max seconds between episodes to join the same event.
+        event_max_gap: max seconds between episodes to cluster into one event
+            (smaller = stricter / more events).
         event_min_episode_sim: min cosine sim to the running event centroid.
         episodic_merge_batch: max episodes merged into one EventEntry.
-        summary_fn: (entries: list) -> str. falls back to time templates if None.
+        summary_fn: callable that summarizes memory entries. It is called as
+            ``summary_fn(entries)`` for episodes and may also be called as
+            ``summary_fn(entries, episode_frames=episode_frames)`` for events.
+            Falls back to time templates if None.
         text_encode_fn: (text: str) -> np.ndarray. encodes summaries for retrieval.
     """
 
@@ -43,10 +48,10 @@ class HierarchicalMemoryWriter:
         recent_capacity: int = 20,
         episodic_capacity: int = 50,
         novelty_threshold: float = 0.25,
-        episode_max_gap: float = 10.0,
+        episode_max_gap: float = 4.0,
         episode_min_sim: float = 0.7,
         episode_max_len: Optional[int] = 8,
-        event_max_gap: float = 45.0,
+        event_max_gap: float = 15.0,
         event_min_episode_sim: float = 0.55,
         episodic_merge_batch: int = 10,
         summary_fn: Optional[Callable] = None,
@@ -289,17 +294,34 @@ class HierarchicalMemoryWriter:
 
         centroid = self._centroid([e.visual_embedding for e in batch])
 
-        # pick 1–3 representative windows (one per top episode, middle window each)
-        sims = [cosine_sim(centroid, e.visual_embedding) for e in batch]
-        rep_indices = sorted(range(len(sims)), key=lambda i: sims[i], reverse=True)
-        rep_indices = rep_indices[: min(3, len(batch))]
-        rep_window_ids = [
-            batch[idx].member_window_ids[len(batch[idx].member_window_ids) // 2]
-            for idx in rep_indices
+        # 2 representative windows per episode — closest to episode centroid by cosine sim,
+        # returned in temporal order. Used as visual input for VLM event summary.
+        episode_rep_windows: List[List[WindowEntry]] = []
+        rep_window_ids: List[str] = []
+        for ep in batch:
+            ep_windows = [
+                self._window_archive[wid]
+                for wid in ep.member_window_ids
+                if wid in self._window_archive
+            ]
+            if not ep_windows:
+                episode_rep_windows.append([])
+                continue
+            sims = [cosine_sim(ep.visual_embedding, w.visual_embedding) for w in ep_windows]
+            top_idxs = sorted(
+                sorted(range(len(sims)), key=lambda i: sims[i], reverse=True)[:2]
+            )
+            reps = [ep_windows[i] for i in top_idxs]
+            episode_rep_windows.append(reps)
+            rep_window_ids.extend(w.entry_id for w in reps)
+
+        episode_frames = [
+            [w.frame for w in ws if w.frame is not None]
+            for ws in episode_rep_windows
         ]
 
         summary = (
-            self._summary_fn(batch)
+            self._summary_fn(batch, episode_frames=episode_frames)
             if self._summary_fn
             else self._default_event_summary(batch)
         )
