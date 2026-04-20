@@ -46,23 +46,43 @@ class HierarchicalRetriever:
         neighbor_radius: int = 1,
         query_summary_embedding: Optional[np.ndarray] = None,
     ) -> RetrievalResult:
-        """run full three-stage retrieval.
+        """top-down hierarchical retrieval with guaranteed recent-window search.
+
+        Stage 0 — recent: always similarity-search recent windows → top_k hits.
+        Stage A — coarse: rank EventEntries by blended score → top_m time ranges.
+        Stage B — fine: rank EpisodeEntries within those ranges → top_k hits.
+        Stage C — grounding: return member windows from top-k episodes via archive.
+
+        Recent hits and archive grounding windows are merged and deduplicated into
+        grounded_windows so the caller receives one clean evidence set.
 
         Args:
             query: raw query text (stored in result for provenance).
             query_embedding: L2-normalised text embedding of the query.
             memory: the live memory object to search.
             top_m: number of coarse EventEntry hits.
-            top_k: number of fine EpisodeEntry hits.
-            neighbor_radius: window radius for local grounding.
+            top_k: number of fine EpisodeEntry hits (also applied to recent search).
+            neighbor_radius: window radius passed to get_grounding_windows for archive lookup.
             query_summary_embedding: separate summary-space embedding; defaults to query_embedding.
         """
         q_sum_emb = query_summary_embedding if query_summary_embedding is not None else query_embedding
 
+        # stage 0: always search recent windows by cosine similarity
+        recent = memory.get_recent_windows()
+        recent_hits: List[WindowEntry] = []
+        recent_scores: dict = {}
+        if recent:
+            sims = [cosine_sim(query_embedding, w.visual_embedding) for w in recent]
+            top_idxs = sorted(range(len(sims)), key=lambda i: sims[i], reverse=True)[:top_k]
+            recent_hits = [recent[i] for i in top_idxs]
+            recent_scores = {recent[i].entry_id: sims[i] for i in top_idxs}
+
+        # stage A: coarse routing over long-term events
         coarse_hits, coarse_scores, candidate_ranges = self._coarse_route(
             query_embedding, q_sum_emb, memory.long_term, top_m
         )
 
+        # stage B: fine search over episodes within event time ranges
         episodic_hits, episodic_scores = self._fine_search(
             query_embedding,
             q_sum_emb,
@@ -70,16 +90,21 @@ class HierarchicalRetriever:
             candidate_ranges,
             top_k,
         )
-        scores = {**coarse_scores, **episodic_scores}
 
-        grounded = self._local_grounding(episodic_hits, memory, neighbor_radius)
+        # stage C: grounding windows from episode member archive
+        archive_windows: List[WindowEntry] = []
+        for ep in episodic_hits:
+            archive_windows.extend(memory.get_grounding_windows(ep, radius=neighbor_radius))
 
-        recent = memory.get_recent_windows()
-        if not episodic_hits and recent:
-            sims = [cosine_sim(query_embedding, w.visual_embedding) for w in recent]
-            top_idxs = sorted(range(len(sims)), key=lambda i: sims[i], reverse=True)[:top_k]
-            grounded = [recent[i] for i in top_idxs]
-            scores = {recent[i].entry_id: sims[i] for i in top_idxs}
+        # merge recent hits + archive windows, deduplicated, recent-first
+        seen: set = set()
+        grounded: List[WindowEntry] = []
+        for w in recent_hits + archive_windows:
+            if w.entry_id not in seen:
+                seen.add(w.entry_id)
+                grounded.append(w)
+
+        scores = {**coarse_scores, **episodic_scores, **recent_scores}
 
         return RetrievalResult(
             query=query,
@@ -179,37 +204,3 @@ class HierarchicalRetriever:
         scores = {ep.entry_id: sc for sc, ep in scored[:top_k]}
         return hits, scores
 
-    def _local_grounding(
-        self,
-        episodic_hits: List[EpisodeEntry],
-        memory: HierarchicalMemoryWriter,
-        radius: int,
-    ) -> List[WindowEntry]:
-        """attach recent windows overlapping episodic hits plus the recent tail."""
-        recent = memory.get_recent_windows()
-        if not recent:
-            return []
-
-        nearby: List[WindowEntry] = []
-
-        if episodic_hits:
-            hit_ranges = [(ep.start_time, ep.end_time) for ep in episodic_hits]
-            for i, w in enumerate(recent):
-                for start, end in hit_ranges:
-                    if w.end_time >= start and w.start_time <= end:
-                        lo = max(0, i - radius)
-                        hi = min(len(recent), i + radius + 1)
-                        nearby.extend(recent[lo:hi])
-                        break
-
-        # always append the most recent tail
-        tail_n = min(radius + 1, len(recent))
-        nearby.extend(recent[-tail_n:])
-
-        seen: set = set()
-        result: List[WindowEntry] = []
-        for w in nearby:
-            if w.entry_id not in seen:
-                seen.add(w.entry_id)
-                result.append(w)
-        return result

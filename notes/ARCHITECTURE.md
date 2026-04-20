@@ -140,14 +140,15 @@ SimpleStream shows that recent context is a very strong baseline, so the archite
 
 #### Role
 
-Store only temporally informative and semantically meaningful past windows.
+Store only temporally informative and semantically meaningful past windows, compressed into coherent action spans.
 
 #### Stored fields
 
-- all recent-memory fields
-- `summary_text` for promoted windows
-- optional `summary_embedding`
-- `tier = "episodic"`
+- `entry_id`, `start_time`, `end_time`
+- `visual_embedding` — self-centrality pooled embedding of member windows (see below)
+- `member_window_ids`
+- `representative_window_ids` — top-weight windows from pooling, used for summarisation
+- `summary_text`, optional `summary_embedding`
 
 #### Promotion rule
 
@@ -159,6 +160,29 @@ When recent memory overflows:
 5. if novelty is high, promote it to episodic memory
 
 This is the notebook-friendly analogue of FluxMem’s **Temporal Adjacency Selection (TAS)**, which keeps temporally informative tokens and drops redundant ones across adjacent frames.
+
+#### Episode embedding — time-aware self-centrality pooling
+
+Rather than mean pooling, the episode embedding is computed by a query-free, training-free pooling rule that favours windows which are both temporally central and locally consistent with their neighbours.
+
+For each window `i` in the episode with embedding `w_i` and timestamp `t_i`:
+
+```
+center_score_i     = -(t_i - t_center)^2 / (2 * sigma_center^2)
+consistency_score_i = sum_j  exp(-|t_i - t_j| / sigma_time) * cos(w_i, w_j)
+score_i            = lambda_center * center_score_i + mu_consistency * consistency_score_i
+alpha_i            = softmax(score_i)
+episode_embedding  = L2_norm( sum_i  alpha_i * w_i )
+```
+
+- `center_score` gives higher weight to temporally central windows, downweighting edge transitions.
+- `consistency_score` gives higher weight to windows that are similar to temporally nearby neighbours, downweighting noisy outliers.
+- The temporal decay kernel `exp(-|t_i - t_j| / sigma_time)` ensures that only local context contributes to each window’s consistency score.
+- Softmax normalization turns scores into a proper probability distribution over windows.
+
+The top-weight windows are also stored as `representative_window_ids` on the episode, providing natural candidates for Florence-2 captioning and VLM event fusion without any additional selection step.
+
+This method is strictly more expressive than mean pooling: it degrades to uniform mean pooling when all scores are equal, but actively upweights the most representative temporal region of the episode otherwise.
 
 #### Why this tier exists
 
@@ -281,38 +305,54 @@ FluxMem is less suitable here because its read path is closer to concatenating t
 
 ### Retrieval stages
 
-#### Stage A: coarse routing
+#### Stage 0: recent window search (always)
 
-Search over **long-term summary embeddings** first.
+Before any hierarchical search, **always** similarity-search the recent window queue.
 
 Input:
 - text query embedding
 
 Search target:
-- summary embeddings of long-term memory entries
+- visual embeddings of all current recent windows
 
 Output:
-- top `M` candidate event/time ranges
+- top `K` recent windows by cosine similarity, always included in the evidence set
+
+This guarantees that the most current visual context is never missed, consistent with SimpleStream's observation that recency is a very strong signal.
+
+#### Stage A: coarse routing
+
+Search over **long-term event embeddings**.
+
+Input:
+- text query embedding
+
+Search target:
+- blended (visual + summary) embeddings of EventEntries
+
+Output:
+- top `M` events → their time ranges as candidates for stage B
 
 #### Stage B: fine retrieval
 
-Search over **episodic memory embeddings** inside the selected time ranges.
+Search over **episode embeddings** inside the candidate time ranges.
 
 Input:
 - same query embedding
-- episodic entries restricted to selected ranges
+- episodic entries temporally overlapping stage A ranges
 
 Output:
-- top `K` episodic hits
+- top `K` episodic hits by blended score
 
-#### Stage C: local grounding
+#### Stage C: grounding
 
-Attach neighboring recent windows around the best episodic hits.
+Return member windows from the top-K episodic hits via the window archive.
 
 Purpose:
-- recover local detail
-- support before/after reasoning
-- preserve fine temporal context
+- recover fine-grained visual evidence at the window level
+- provide the actual frames / embeddings for formatter and downstream reasoning
+
+These archive windows are merged with the stage-0 recent hits and deduplicated into one evidence set.
 
 ### Scoring
 
@@ -437,7 +477,7 @@ Window entries preserve fine local evidence, episode entries support medium-rang
 
 On each new local window, the system first computes its visual embedding and appends it to recent memory. If recent memory exceeds capacity, the oldest recent entry is checked for novelty relative to adjacent recent windows. If it is too redundant, it is discarded. If it is sufficiently novel, it is promoted to episodic memory and optionally receives a short local summary. This is the notebook-level analogue of FluxMem’s idea that recent memory should be compressed by filtering temporal redundancy rather than stored exhaustively forever.
 
-If episodic memory then exceeds capacity, older episodic entries are merged into a higher-level summary object. In practice, this means grouping temporally close and semantically related episodic entries, computing a centroid visual embedding, choosing representative members, and creating a concise summary text. That compressed object is written into long-term summary memory. This is simpler than FluxMem’s exact token-level TAS/SDC pipeline, but it preserves the same core idea: older content should be stored more compactly than recent content.
+If episodic memory then exceeds capacity, older episodic entries are merged into a higher-level summary object. In practice, this means grouping temporally close and semantically related episodic entries, computing a centroid visual embedding from the episode embeddings, choosing representative windows (taken directly from each episode’s `representative_window_ids`), and creating a concise summary text via Qwen2.5-VL. That compressed object is written into long-term summary memory.
 
 This update rule is intentionally **query-agnostic on the write side**: the system does not know future questions in advance, so it stores memory based on recency, novelty, and bounded capacity rather than on a specific query.
 
@@ -448,10 +488,13 @@ def update_memory(new_window):
         old_window = pop_oldest_recent()
         if is_novel(old_window, neighbors=get_recent_neighbors()):
             episodic_entry = promote_to_episodic(old_window)
+            # episode embedding: self-centrality pooling over member window embeddings
+            episodic_entry.visual_embedding = self_centrality_pool(member_windows)
+            episodic_entry.representative_window_ids = top_weight_windows
             add_to_episodic(episodic_entry)
     if episodic_overflow():
         old_batch = pop_oldest_episodic_batch()
-        summary_entry = merge_into_summary(old_batch)
+        summary_entry = merge_into_summary(old_batch)  # centroid of episode embeddings
         add_to_long_term(summary_entry)
 ```
 
@@ -466,18 +509,30 @@ The main retrieval score should be based on **visual similarity**. Summary simil
 ```python
 def retrieve(query, top_m=3, top_k=5, neighbor_radius=1):
     q_emb = encode_query(query)
-    coarse_hits = search_long_term_summaries(q_emb, top_m=top_m)
+
+    # stage 0: always search recent windows
+    recent_hits = similarity_search_recent(q_emb, top_k=top_k)
+
+    # stage A: coarse routing over events
+    coarse_hits = search_long_term_events(q_emb, top_m=top_m)
     candidate_ranges = [hit.time_range for hit in coarse_hits]
+
+    # stage B: fine search over episodes in candidate ranges
     episodic_hits = search_episodic_within_ranges(
         q_emb, ranges=candidate_ranges, top_k=top_k
     )
-    grounded_hits = add_recent_neighbors(
-        episodic_hits, radius=neighbor_radius
-    )
+
+    # stage C: grounding from episode member archive
+    archive_windows = [
+        get_grounding_windows(ep, radius=neighbor_radius)
+        for ep in episodic_hits
+    ]
+
+    grounded_windows = deduplicate(recent_hits + flatten(archive_windows))
     return {
         "coarse_hits": coarse_hits,
         "episodic_hits": episodic_hits,
-        "grounded_hits": grounded_hits,
+        "grounded_windows": grounded_windows,
     }
 ```
 

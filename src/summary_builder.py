@@ -244,6 +244,7 @@ class SummaryBuilder:
         episode_frames: Optional[List[List[np.ndarray]]],
         start_time: float,
         end_time: float,
+        episode_time_ranges: Optional[List[tuple]] = None,
     ) -> str:
         """fuse episode summaries + representative frames into one event sentence."""
         if not episode_summaries:
@@ -251,7 +252,9 @@ class SummaryBuilder:
 
         if self.use_vlm and self._vlm is not None and episode_frames:
             try:
-                fused = self._fuse_with_vlm(episode_summaries, episode_frames)
+                fused = self._fuse_with_vlm(
+                    episode_summaries, episode_frames, episode_time_ranges
+                )
                 if fused:
                     return f"Event {start_time:.1f}–{end_time:.1f}s: {fused}"
             except Exception as exc:
@@ -282,6 +285,7 @@ class SummaryBuilder:
                 episode_frames,
                 start,
                 end,
+                episode_time_ranges=[(e.start_time, e.end_time) for e in entries],
             )
         return f"Memory {start:.1f}–{end:.1f}s"
 
@@ -289,6 +293,7 @@ class SummaryBuilder:
         self,
         episode_texts: List[str],
         episode_frames: List[List[np.ndarray]],
+        episode_time_ranges: Optional[List[tuple]] = None,
     ) -> str:
         import torch
         from PIL import Image
@@ -302,13 +307,24 @@ class SummaryBuilder:
         if not all_frames:
             return ""
 
-        bulleted = "\n".join(f"- {t}" for t in episode_texts[:8])
+        lines = []
+        for i, text in enumerate(episode_texts[:8]):
+            if episode_time_ranges and i < len(episode_time_ranges):
+                s, e = episode_time_ranges[i]
+                lines.append(f"- [{s:.1f}s–{e:.1f}s] {text}")
+            else:
+                lines.append(f"- {text}")
+        bulleted = "\n".join(lines)
         prompt = (
-            "You are summarising a video event. "
-            "Use the images and scene descriptions below to write ONE concise sentence (≤25 words) "
-            "describing the overall event. Use only what is visible; do not invent details.\n\n"
+            "You are summarising a longer video event from several shorter scenes.\n"
+            "Use the provided images together with the scene descriptions below.\n"
+            "Write **2–3 short sentences** (plain prose, no bullet list) that capture the **overall** "
+            "event: who/what is on screen, the main activity or setting change across scenes, and any "
+            "clear continuity. Stay grounded: describe only what the images and text support; do not "
+            "invent people, objects, places, or actions.\n"
+            "Keep it tight—roughly **40–80 words** total across the 2–3 sentences.\n\n"
             f"Scene descriptions:\n{bulleted}\n\n"
-            "Return the sentence only, no preface."
+            "Return only those 2–3 sentences, with no title, numbering, or preamble."
         )
 
         content = [{"type": "image"} for _ in all_frames]
@@ -328,7 +344,7 @@ class SummaryBuilder:
         with torch.no_grad(), _suppress_generate_warnings():
             out = self._vlm.generate(
                 **inputs,
-                max_new_tokens=80,
+                max_new_tokens=160,
                 do_sample=False,
                 num_beams=1,
             )

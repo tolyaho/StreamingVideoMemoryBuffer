@@ -20,13 +20,16 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 
 - [x] Architecture locked: hierarchical visual memory + multi-scale summaries
 - [x] Write path is query-agnostic (store by recency + novelty + capacity)
-- [x] Read path is query-aware (coarse-to-fine retrieval)
+- [x] Read path is query-aware (top-down retrieval: recent → events → episodes → grounding)
 - [x] Encoder choice: X-CLIP ViT-B/32 (microsoft/xclip-base-patch32, 512-dim, temporally-aware clip embeddings)
 - [x] Summary model choice: Florence-2-base (microsoft/Florence-2-base, 270M)
-- [x] Event fusion model: Qwen2.5-VL-3B-Instruct (multimodal — episode texts + 2 frames per episode)
+- [x] Event fusion model: Qwen2.5-VL-3B-Instruct (multimodal — episode texts + representative frames per episode)
 - [x] Summary gradient: lower tier = more visual; higher tier = more text
 - [x] Episode summary: concatenate per-window Florence <DETAILED_CAPTION> outputs at episode flush
-- [x] Event summary: Qwen2.5-VL sees episode summaries (text) + 2 representative frames per episode
+- [x] Event summary: Qwen2.5-VL sees episode summaries (text) + representative frames from self-centrality pooling
+- [x] Episode embedding: time-aware self-centrality pooling (replaces mean pooling)
+- [x] Event embedding: L2-normalised centroid of member episode embeddings (unchanged)
+- [x] Retrieval order: stage 0 always searches recent by cosine sim; stage A events; stage B episodes; stage C archive grounding
 - [x] Evaluation style decided: qualitative + precision@k on synthetic + baseline comparison
 - [x] Research notes written (related_work_notes.md)
 - [x] Architecture document written (ARCHITECTURE.md)
@@ -62,9 +65,11 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
   - [x] Episode building: gap + similarity + max_len checks
   - [x] Episode flush on scene break or capacity
   - [x] Pending episode snapshot for live queryability
+  - [x] Episode embedding: time-aware self-centrality pooling (center_score + consistency_score → softmax weights → weighted sum)
+  - [x] representative_window_ids stored on EpisodeEntry (top-weight windows from pooling)
 - [x] Tier 3 — Long-term memory: greedy semantic-temporal clustering (SDC-inspired)
-  - [x] Centroid visual embedding
-  - [x] 2 representative windows per episode (closest to episode centroid), IDs stored
+  - [x] Centroid visual embedding (L2-normalised mean of episode embeddings)
+  - [x] Representative windows sourced from EpisodeEntry.representative_window_ids (pooling winners)
   - [x] Summary text + optional summary embedding
   - [x] episode_frames passed to summary_fn for VLM event fusion
 - [x] update() online per-window call
@@ -85,12 +90,11 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 - [x] Resilient: all model failures fall back to template
 
 ### Retriever (retriever.py)
-- [x] Stage A: coarse routing over long-term EventEntries (visual + summary similarity, no recency)
-- [x] Stage B: fine search over episodic entries within candidate time ranges (visual + summary + recency)
-- [x] Stage C: local grounding from recent queue
-  - [x] Recent windows temporally adjacent to episodic hits
-  - [x] Always append recent tail (recency is always valuable per SimpleStream)
-- [x] Fallback to direct recent search when episodic is empty
+- [x] Stage 0: always similarity-search recent windows → top_k hits by cosine sim (guaranteed fresh context)
+- [x] Stage A: coarse routing over long-term EventEntries (blended visual + summary similarity)
+- [x] Stage B: fine search over episodic entries within candidate time ranges (blended visual + summary + recency)
+- [x] Stage C: grounding from window archive via episode member IDs (get_grounding_windows)
+- [x] Recent hits + archive windows merged and deduplicated into grounded_windows
 - [x] _blended_score() with weight renormalisation when summary_embedding is None
 - [x] query_summary_embedding optional param for separate summary space
 
