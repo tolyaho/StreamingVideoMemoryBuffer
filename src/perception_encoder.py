@@ -62,14 +62,10 @@ class PerceptionEncoder:
         clip = _sample_uniform(frames, self.num_frames)
         pil_frames = [Image.fromarray(f) for f in clip]
 
-        # XCLIPProcessor(videos=...) returns empty dict without text; use image_processor directly
         pixel_values = self.processor.image_processor(pil_frames, return_tensors="pt")["pixel_values"]
         pixel_values = pixel_values.to(self.device)   # (1, num_frames, C, H, W)
 
         with torch.no_grad():
-            # Inline get_video_features so we can pass return_dict=True to MIT.
-            # get_video_features() calls self.mit(cls_features) without return_dict,
-            # which makes MIT return a tuple; .pooler_output then fails.
             B, T, C, H, W = pixel_values.shape
             vision_out = self.model.vision_model(pixel_values=pixel_values.reshape(-1, C, H, W))
             video_embeds = self.model.visual_projection(vision_out.pooler_output)
@@ -83,7 +79,6 @@ class PerceptionEncoder:
         """encode a text string; returns an L2-normalised embedding."""
         import torch
 
-        # XCLIPProcessor(text=...) also returns empty dict; use tokenizer directly
         inputs = self.processor.tokenizer([text], return_tensors="pt", padding=True)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 import numpy as np
@@ -48,14 +48,6 @@ class WindowEntry:
             tier=tier,
         )
 
-    @property
-    def mid_time(self) -> float:
-        return (self.start_time + self.end_time) / 2
-
-    @property
-    def duration(self) -> float:
-        return self.end_time - self.start_time
-
 
 @dataclass
 class EpisodeEntry:
@@ -64,18 +56,11 @@ class EpisodeEntry:
     entry_id: str
     start_time: float
     end_time: float
-    visual_embedding: np.ndarray   # centroid of member window embeddings
+    visual_embedding: np.ndarray   # self-centrality pooled embedding of member windows
     member_window_ids: List[str]
     summary_text: str
     summary_embedding: Optional[np.ndarray] = None
-
-    @property
-    def duration(self) -> float:
-        return self.end_time - self.start_time
-
-    @property
-    def mid_time(self) -> float:
-        return (self.start_time + self.end_time) / 2
+    representative_window_ids: List[str] = field(default_factory=list)  # top-weight windows from pooling
 
 
 @dataclass
@@ -90,14 +75,6 @@ class EventEntry:
     representative_window_ids: List[str]
     summary_text: str
     summary_embedding: Optional[np.ndarray] = None
-
-    @property
-    def duration(self) -> float:
-        return self.end_time - self.start_time
-
-    @property
-    def mid_time(self) -> float:
-        return (self.start_time + self.end_time) / 2
 
 
 @dataclass

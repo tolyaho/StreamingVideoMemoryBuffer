@@ -2,7 +2,9 @@
 
 tier 1 (recent): fixed-capacity deque of the most recent WindowEntries.
 tier 2 (episodic): coherent action spans built from novel promoted windows.
+              episode embedding: time-aware self-centrality pooling over member window embeddings.
 tier 3 (long-term): compressed EventEntries consolidated from the oldest episodes.
+              event embedding: L2-normalised centroid of member episode embeddings.
 
 write path is query-agnostic — storage is driven by recency, novelty, and capacity.
 """
@@ -10,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 from collections import deque
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 
@@ -36,6 +38,11 @@ class HierarchicalMemoryWriter:
             (smaller = stricter / more events).
         event_min_episode_sim: min cosine sim to the running event centroid.
         episodic_merge_batch: max episodes merged into one EventEntry.
+        sigma_center: std dev (seconds) of the temporal centrality Gaussian for episode pooling.
+        sigma_time: time-decay constant (seconds) for the local consistency kernel.
+        lambda_center: weight of temporal centrality term in self-centrality score.
+        mu_consistency: weight of local consistency term in self-centrality score.
+        n_rep_windows: number of top-weight windows to keep as episode representatives.
         summary_fn: callable that summarizes memory entries. It is called as
             ``summary_fn(entries)`` for episodes and may also be called as
             ``summary_fn(entries, episode_frames=episode_frames)`` for events.
@@ -54,6 +61,11 @@ class HierarchicalMemoryWriter:
         event_max_gap: float = 15.0,
         event_min_episode_sim: float = 0.55,
         episodic_merge_batch: int = 10,
+        sigma_center: float = 3.0,
+        sigma_time: float = 2.0,
+        lambda_center: float = 0.5,
+        mu_consistency: float = 0.5,
+        n_rep_windows: int = 2,
         summary_fn: Optional[Callable] = None,
         text_encode_fn: Optional[Callable[[str], np.ndarray]] = None,
     ):
@@ -66,6 +78,11 @@ class HierarchicalMemoryWriter:
         self.event_max_gap = event_max_gap
         self.event_min_episode_sim = event_min_episode_sim
         self.episodic_merge_batch = episodic_merge_batch
+        self.sigma_center = sigma_center
+        self.sigma_time = sigma_time
+        self.lambda_center = lambda_center
+        self.mu_consistency = mu_consistency
+        self.n_rep_windows = n_rep_windows
         self._summary_fn = summary_fn
         self._text_encode_fn = text_encode_fn
 
@@ -211,7 +228,18 @@ class HierarchicalMemoryWriter:
         windows = self._pending_episode
         self._pending_episode = []
 
-        centroid = self._centroid([w.visual_embedding for w in windows])
+        embs = [w.visual_embedding for w in windows]
+        times = [w.start_time for w in windows]
+        episode_emb, rep_indices = self._self_centrality_pool(
+            embs, times,
+            sigma_center=self.sigma_center,
+            sigma_time=self.sigma_time,
+            lambda_center=self.lambda_center,
+            mu_consistency=self.mu_consistency,
+            n_rep=self.n_rep_windows,
+        )
+        rep_ids = [windows[i].entry_id for i in rep_indices]
+
         summary = (
             self._summary_fn(windows)
             if self._summary_fn
@@ -223,10 +251,11 @@ class HierarchicalMemoryWriter:
                 entry_id=f"ep-{uuid.uuid4().hex[:8]}",
                 start_time=windows[0].start_time,
                 end_time=windows[-1].end_time,
-                visual_embedding=centroid,
+                visual_embedding=episode_emb,
                 member_window_ids=[w.entry_id for w in windows],
                 summary_text=summary,
                 summary_embedding=self._embed_summary(summary),
+                representative_window_ids=rep_ids,
             )
         )
         self._n_episodes_flushed += 1
@@ -237,22 +266,87 @@ class HierarchicalMemoryWriter:
             return None
 
         windows = self._pending_episode
+        embs = [w.visual_embedding for w in windows]
+        times = [w.start_time for w in windows]
+        episode_emb, rep_indices = self._self_centrality_pool(
+            embs, times,
+            sigma_center=self.sigma_center,
+            sigma_time=self.sigma_time,
+            lambda_center=self.lambda_center,
+            mu_consistency=self.mu_consistency,
+            n_rep=self.n_rep_windows,
+        )
+        rep_ids = [windows[i].entry_id for i in rep_indices]
+
         summary = (
             self._summary_fn(windows)
             if self._summary_fn
             else self._default_episode_summary(windows)
         )
         return EpisodeEntry(
-            entry_id=(
-                f"ep-pending-{windows[0].entry_id}-{windows[-1].entry_id}"
-            ),
+            entry_id=f"ep-pending-{windows[0].entry_id}-{windows[-1].entry_id}",
             start_time=windows[0].start_time,
             end_time=windows[-1].end_time,
-            visual_embedding=self._centroid([w.visual_embedding for w in windows]),
+            visual_embedding=episode_emb,
             member_window_ids=[w.entry_id for w in windows],
             summary_text=summary,
             summary_embedding=self._embed_summary(summary),
+            representative_window_ids=rep_ids,
         )
+
+    @staticmethod
+    def _self_centrality_pool(
+        embeddings: List[np.ndarray],
+        timestamps: List[float],
+        sigma_center: float = 3.0,
+        sigma_time: float = 2.0,
+        lambda_center: float = 0.5,
+        mu_consistency: float = 0.5,
+        n_rep: int = 2,
+    ) -> Tuple[np.ndarray, List[int]]:
+        """time-aware self-centrality pooling over an ordered sequence of window embeddings.
+
+        For each window i:
+          center_score_i    = -(t_i - t_center)^2 / (2 * sigma_center^2)
+          consistency_score_i = sum_j exp(-|t_i - t_j| / sigma_time) * cos(w_i, w_j)
+          score_i           = lambda_center * center_score_i + mu_consistency * consistency_score_i
+          alpha_i           = softmax(score_i)
+        episode_embedding = sum_i alpha_i * w_i   (L2-normalised)
+
+        Returns the pooled embedding and the indices of the top-n_rep highest-weight windows
+        in temporal order (useful as representative windows for summarisation).
+        """
+        n = len(embeddings)
+        if n == 1:
+            return embeddings[0].copy(), [0]
+
+        t = np.array(timestamps, dtype=np.float64)
+        t_center = (t[0] + t[-1]) / 2.0
+
+        center_scores = -((t - t_center) ** 2) / (2.0 * sigma_center ** 2 + 1e-8)
+
+        consistency_scores = np.zeros(n, dtype=np.float64)
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    continue
+                decay = np.exp(-abs(t[i] - t[j]) / (sigma_time + 1e-8))
+                consistency_scores[i] += decay * cosine_sim(embeddings[i], embeddings[j])
+
+        scores = lambda_center * center_scores + mu_consistency * consistency_scores
+        scores_shifted = scores - scores.max()
+        weights = np.exp(scores_shifted)
+        weights /= weights.sum() + 1e-8
+        weights = weights.astype(np.float32)
+
+        stacked = np.stack(embeddings)
+        pooled = (weights[:, None] * stacked).sum(axis=0)
+        pooled = (pooled / (np.linalg.norm(pooled) + 1e-8)).astype(np.float32)
+
+        n_rep_actual = min(n_rep, n)
+        rep_indices = sorted(np.argsort(weights)[-n_rep_actual:].tolist())
+
+        return pooled, rep_indices
 
     @staticmethod
     def _centroid(vectors: List[np.ndarray]) -> np.ndarray:
@@ -294,24 +388,34 @@ class HierarchicalMemoryWriter:
 
         centroid = self._centroid([e.visual_embedding for e in batch])
 
-        # 2 representative windows per episode — closest to episode centroid by cosine sim,
-        # returned in temporal order. Used as visual input for VLM event summary.
+        # representative windows per episode — use self-centrality pooling winners stored on
+        # the episode; fall back to cosine-sim selection if ids are missing from archive.
         episode_rep_windows: List[List[WindowEntry]] = []
         rep_window_ids: List[str] = []
         for ep in batch:
-            ep_windows = [
-                self._window_archive[wid]
-                for wid in ep.member_window_ids
-                if wid in self._window_archive
-            ]
-            if not ep_windows:
+            if ep.representative_window_ids:
+                reps = [
+                    self._window_archive[wid]
+                    for wid in ep.representative_window_ids
+                    if wid in self._window_archive
+                ]
+            else:
+                ep_windows = [
+                    self._window_archive[wid]
+                    for wid in ep.member_window_ids
+                    if wid in self._window_archive
+                ]
+                if not ep_windows:
+                    episode_rep_windows.append([])
+                    continue
+                sims = [cosine_sim(ep.visual_embedding, w.visual_embedding) for w in ep_windows]
+                top_idxs = sorted(
+                    sorted(range(len(sims)), key=lambda i: sims[i], reverse=True)[:2]
+                )
+                reps = [ep_windows[i] for i in top_idxs]
+            if not reps:
                 episode_rep_windows.append([])
                 continue
-            sims = [cosine_sim(ep.visual_embedding, w.visual_embedding) for w in ep_windows]
-            top_idxs = sorted(
-                sorted(range(len(sims)), key=lambda i: sims[i], reverse=True)[:2]
-            )
-            reps = [ep_windows[i] for i in top_idxs]
             episode_rep_windows.append(reps)
             rep_window_ids.extend(w.entry_id for w in reps)
 
