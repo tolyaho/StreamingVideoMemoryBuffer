@@ -1,4 +1,3 @@
-"""streams one sample video through StreamReader → PerceptionEncoder → HierarchicalMemoryWriter."""
 from __future__ import annotations
 
 import sys
@@ -18,16 +17,14 @@ from src import (
 )
 from src.data_structures import EpisodeEntry, EventEntry
 
-# ── config ──────────────────────────────────────────────────────────────────
 VIDEO_PATH        = ROOT / "data/Real-Time%20Visual%20Understanding_1-50/sample_36/video.mp4"
 FPS               = 1.0
 WINDOW_DURATION   = 3.0
 RECENT_CAPACITY   = 20
-EPISODIC_CAPACITY = 50
+EPISODIC_CAPACITY = 5
 EPISODE_MAX_GAP   = 4.0
 EVENT_MAX_GAP     = 15.0
 NOVELTY_THRESHOLD = 0.05   # lower than default 0.25 — real X-CLIP embeddings are dense
-# ────────────────────────────────────────────────────────────────────────────
 
 W = 68  # line width for decorations
 
@@ -68,7 +65,6 @@ def _print_event(ev: EventEntry, idx: int) -> None:
 
 
 def _flush_new(memory: HierarchicalMemoryWriter, ep_seen: int, ev_seen: int) -> tuple[int, int]:
-    """print any episodes or events formed since last check; return updated counts."""
     while len(memory.episodic) > ep_seen:
         ep_seen += 1
         _print_episode(memory.episodic[ep_seen - 1], ep_seen)
@@ -82,7 +78,7 @@ def _flush_new(memory: HierarchicalMemoryWriter, ep_seen: int, ev_seen: int) -> 
 
 def main() -> None:
     encoder = PerceptionEncoder()
-    summary = SummaryBuilder(use_model=True)
+    summary = SummaryBuilder(use_model=True, use_vlm=True)
     reader  = StreamReader(fps=FPS, window_duration=WINDOW_DURATION)
     memory  = HierarchicalMemoryWriter(
         recent_capacity=RECENT_CAPACITY,

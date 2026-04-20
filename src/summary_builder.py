@@ -30,7 +30,9 @@ def _default_torch_device(passed: Optional[str]) -> str:
 def _dtype_for_device(device: str):
     import torch
 
-    return torch.float16 if device in ("cuda", "mps") else torch.float32
+    if device in ("cuda", "mps"):
+        return torch.float16
+    return torch.bfloat16  # halves CPU memory vs float32; supported on modern CPUs
 
 
 def _patch_florence2_generation(model) -> None:
@@ -87,7 +89,9 @@ class SummaryBuilder:
         vlm_model_name: HuggingFace id for the event fusion VLM.
         task_prompt: Florence-2 task token used for per-window captions at ingest.
         episode_task_prompt: Florence task for each member window when building episode text.
-        device: torch device. auto-detected if None.
+        device: torch device for Florence. auto-detected if None.
+        vlm_device: device for Qwen event VLM. if None: same as ``device`` when no captioner;
+            if Florence is already on MPS, defaults to ``cpu`` so both models fit in memory.
         caption_num_beams: beam width for Florence-2 generate (CUDA only; MPS/CPU uses greedy).
     """
 
@@ -100,6 +104,7 @@ class SummaryBuilder:
         task_prompt: str = "<CAPTION>",
         episode_task_prompt: str = "<DETAILED_CAPTION>",
         device: Optional[str] = None,
+        vlm_device: Optional[str] = None,
         caption_num_beams: int = 3,
     ):
         self.use_model = use_model
@@ -109,6 +114,7 @@ class SummaryBuilder:
         self.task_prompt = task_prompt
         self.episode_task_prompt = episode_task_prompt
         self.device: Optional[str] = device
+        self._vlm_device_arg = vlm_device
         self.caption_num_beams = max(1, int(caption_num_beams))
 
         self._model = None
@@ -119,7 +125,7 @@ class SummaryBuilder:
         if use_model:
             self._load_captioner(caption_model_name, device)
         if use_vlm:
-            self._load_vlm(vlm_model_name, device)
+            self._load_vlm(vlm_model_name)
 
     def _load_captioner(self, model_name: str, device: Optional[str]) -> None:
         from transformers import AutoModelForCausalLM, AutoProcessor
@@ -143,12 +149,29 @@ class SummaryBuilder:
             _clear_invalid_early_stopping(self._model)
         print("Captioner ready.")
 
-    def _load_vlm(self, model_name: str, device: Optional[str]) -> None:
+    def _resolve_vlm_device(self) -> str:
+        if self._vlm_device_arg is not None:
+            return self._vlm_device_arg
+        # Florence + Qwen on the same MPS heap often OOM; CPU for VLM is slower but stable.
+        if self.device == "mps" and self._model is not None:
+            print(
+                "Placing event VLM on CPU (Florence on MPS — both on MPS usually exceeds "
+                "unified memory). Pass vlm_device='mps' to force, or free GPU memory."
+            )
+            return "cpu"
+        return _default_torch_device(self.device)
+
+    def _load_vlm(self, model_name: str) -> None:
+        import torch
         from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
-        self.device = _default_torch_device(device or self.device)
-        dtype = _dtype_for_device(self.device)
-        print(f"Loading event VLM {model_name} on {self.device} ({dtype})…")
+        # Qwen2.5-VL calls torch.compiler.is_compiling() which was added in PyTorch 2.1
+        if not hasattr(torch.compiler, "is_compiling"):
+            torch.compiler.is_compiling = lambda: False
+
+        dev = self._resolve_vlm_device()
+        dtype = _dtype_for_device(dev)
+        print(f"Loading event VLM {model_name} on {dev} ({dtype})…")
         self._vlm_proc = AutoProcessor.from_pretrained(model_name)
         self._vlm = (
             Qwen2_5_VLForConditionalGeneration.from_pretrained(
@@ -156,7 +179,7 @@ class SummaryBuilder:
                 dtype=dtype,
                 attn_implementation="eager",
             )
-            .to(self.device)
+            .to(dev)
             .eval()
         )
         print("Event VLM ready.")
@@ -167,7 +190,6 @@ class SummaryBuilder:
         task_prompt: Optional[str] = None,
         max_new_tokens: int = 96,
     ) -> str:
-        """run Florence-2 on a single RGB uint8 frame and return the caption string."""
         if not self.use_model or self._model is None:
             return "visual scene"
 
@@ -201,7 +223,6 @@ class SummaryBuilder:
         return str(parsed.get(prompt, "")).strip() or "visual scene"
 
     def build_window_caption(self, raw_window) -> str:
-        """Florence <CAPTION> on the window's representative frame; falls back to time template."""
         if not self.use_model or self._model is None:
             return self.build_window_note(raw_window.start_time, raw_window.end_time)
         frame = raw_window.representative_frame
@@ -210,7 +231,6 @@ class SummaryBuilder:
         return self.caption_frame(frame)
 
     def caption_episode(self, windows: list, start_time: float, end_time: float) -> str:
-        """concatenate Florence episode_task_prompt captions for each window's stored rep frame."""
         if not windows:
             return f"Episode {start_time:.1f}–{end_time:.1f}s"
 
@@ -246,7 +266,6 @@ class SummaryBuilder:
         end_time: float,
         episode_time_ranges: Optional[List[tuple]] = None,
     ) -> str:
-        """fuse episode summaries + representative frames into one event sentence."""
         if not episode_summaries:
             return f"Event {start_time:.1f}–{end_time:.1f}s"
 
@@ -271,7 +290,6 @@ class SummaryBuilder:
         entries: list,
         episode_frames: Optional[List[List[np.ndarray]]] = None,
     ) -> str:
-        """dispatch: list[WindowEntry] → episode summary, list[EpisodeEntry] → event summary."""
         from .data_structures import EpisodeEntry, WindowEntry
 
         if not entries:

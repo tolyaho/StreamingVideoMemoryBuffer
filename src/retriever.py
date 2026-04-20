@@ -18,8 +18,7 @@ from .memory_writer import HierarchicalMemoryWriter, cosine_sim
 
 
 class HierarchicalRetriever:
-    """retrieves the smallest useful subset of past memory for a text query.
-
+    """
     Args:
         alpha: weight for visual embedding similarity (dominant signal).
         beta: weight for summary text embedding similarity (auxiliary).
@@ -46,16 +45,7 @@ class HierarchicalRetriever:
         neighbor_radius: int = 1,
         query_summary_embedding: Optional[np.ndarray] = None,
     ) -> RetrievalResult:
-        """top-down hierarchical retrieval with guaranteed recent-window search.
-
-        Stage 0 — recent: always similarity-search recent windows → top_k hits.
-        Stage A — coarse: rank EventEntries by blended score → top_m time ranges.
-        Stage B — fine: rank EpisodeEntries within those ranges → top_k hits.
-        Stage C — grounding: return member windows from top-k episodes via archive.
-
-        Recent hits and archive grounding windows are merged and deduplicated into
-        grounded_windows so the caller receives one clean evidence set.
-
+        """
         Args:
             query: raw query text (stored in result for provenance).
             query_embedding: L2-normalised text embedding of the query.
@@ -67,7 +57,6 @@ class HierarchicalRetriever:
         """
         q_sum_emb = query_summary_embedding if query_summary_embedding is not None else query_embedding
 
-        # stage 0: always search recent windows by cosine similarity
         recent = memory.get_recent_windows()
         recent_hits: List[WindowEntry] = []
         recent_scores: dict = {}
@@ -77,12 +66,10 @@ class HierarchicalRetriever:
             recent_hits = [recent[i] for i in top_idxs]
             recent_scores = {recent[i].entry_id: sims[i] for i in top_idxs}
 
-        # stage A: coarse routing over long-term events
         coarse_hits, coarse_scores, candidate_ranges = self._coarse_route(
             query_embedding, q_sum_emb, memory.long_term, top_m
         )
 
-        # stage B: fine search over episodes within event time ranges
         episodic_hits, episodic_scores = self._fine_search(
             query_embedding,
             q_sum_emb,
@@ -91,12 +78,10 @@ class HierarchicalRetriever:
             top_k,
         )
 
-        # stage C: grounding windows from episode member archive
         archive_windows: List[WindowEntry] = []
         for ep in episodic_hits:
             archive_windows.extend(memory.get_grounding_windows(ep, radius=neighbor_radius))
 
-        # merge recent hits + archive windows, deduplicated, recent-first
         seen: set = set()
         grounded: List[WindowEntry] = []
         for w in recent_hits + archive_windows:

@@ -1,4 +1,3 @@
-"""reads a video file and yields fixed-duration RawWindows at a target fps."""
 from __future__ import annotations
 
 import os
@@ -11,8 +10,6 @@ import numpy as np
 
 @dataclass
 class RawWindow:
-    """raw video window before visual encoding."""
-
     window_id: str
     start_time: float
     end_time: float
@@ -24,7 +21,6 @@ class RawWindow:
 
     @property
     def representative_frame(self) -> np.ndarray | None:
-        """middle frame of the window."""
         if not self.frames:
             return None
         return self.frames[len(self.frames) // 2].copy()
@@ -48,7 +44,6 @@ class StreamReader:
         self._frames_per_window = max(1, int(fps * window_duration))
 
     def read_windows(self, video_path: str) -> Iterator[RawWindow]:
-        """lazily yield RawWindow objects from a video file."""
         import cv2
 
         if not os.path.exists(video_path):

@@ -1,4 +1,3 @@
-"""converts retrieved evidence into a human-readable block and an LLM-ready dict."""
 from __future__ import annotations
 
 from typing import Optional
@@ -9,10 +8,7 @@ from .data_structures import RetrievalResult
 
 
 class ReasonerInputFormatter:
-    """turns a RetrievalResult into a clean representation for downstream reasoning."""
-
     def format_text(self, result: RetrievalResult) -> str:
-        """produce a readable evidence block suitable for display in a notebook."""
         lines = [
             "=" * 64,
             f"QUERY: {result.query}",
@@ -57,11 +53,6 @@ class ReasonerInputFormatter:
         result: RetrievalResult,
         query_embedding: Optional[np.ndarray] = None,
     ) -> dict:
-        """structured dict representing what would be passed to a full multimodal LLM.
-
-        visual_context holds raw embeddings as placeholders — a real adapter
-        would project these into the LM's token dimension.
-        """
         visual_tokens = []
 
         for ep in result.episodic_hits:
