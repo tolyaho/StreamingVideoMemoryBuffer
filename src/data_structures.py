@@ -8,8 +8,6 @@ import numpy as np
 
 @dataclass
 class WindowEntry:
-    """smallest stored memory unit — a short local time window of sampled frames."""
-
     entry_id: str
     start_time: float
     end_time: float
@@ -28,7 +26,6 @@ class WindowEntry:
         summary_embedding: Optional[np.ndarray] = None,
         tier: str = "recent",
     ) -> "WindowEntry":
-        """bridge from StreamReader.RawWindow to WindowEntry."""
         frame = None
         if hasattr(raw_window, "representative_frame"):
             frame = raw_window.representative_frame
@@ -51,8 +48,6 @@ class WindowEntry:
 
 @dataclass
 class EpisodeEntry:
-    """coherent action span built from consecutive novel windows."""
-
     entry_id: str
     start_time: float
     end_time: float
@@ -60,13 +55,11 @@ class EpisodeEntry:
     member_window_ids: List[str]
     summary_text: str
     summary_embedding: Optional[np.ndarray] = None
-    representative_window_ids: List[str] = field(default_factory=list)  # top-weight windows from pooling
+    representative_window_ids: List[str] = field(default_factory=list)
 
 
 @dataclass
 class EventEntry:
-    """high-level activity cluster built from consecutive episodes."""
-
     entry_id: str
     start_time: float
     end_time: float
@@ -79,8 +72,6 @@ class EventEntry:
 
 @dataclass
 class RetrievalResult:
-    """bundle returned by the hierarchical retriever after a query."""
-
     query: str
     coarse_hits: List[EventEntry]
     episodic_hits: List[EpisodeEntry]

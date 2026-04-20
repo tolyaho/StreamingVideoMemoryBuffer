@@ -91,7 +91,6 @@ class HierarchicalMemoryWriter:
         self.long_term: List[EventEntry] = []
         self._window_archive: dict[str, WindowEntry] = {}
 
-        # open episode buffer — flushed on scene break or finalize()
         self._pending_episode: List[WindowEntry] = []
 
         self._n_discarded = 0
@@ -99,12 +98,7 @@ class HierarchicalMemoryWriter:
         self._n_episodes_flushed = 0
         self._n_consolidated = 0
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
     def update(self, window: WindowEntry) -> None:
-        """process one new window: add to recent and propagate overflow upward."""
         self.recent.append(window)
 
         if len(self.recent) > self.recent_capacity:
@@ -120,7 +114,6 @@ class HierarchicalMemoryWriter:
             self._n_consolidated += 1
 
     def finalize(self) -> None:
-        """flush the open episode at end of stream."""
         self._flush_current_episode()
         while len(self.episodic) > self.episodic_capacity:
             self._consolidate_episodic()
@@ -130,7 +123,6 @@ class HierarchicalMemoryWriter:
         return list(self.recent)
 
     def get_searchable_episodes(self) -> List[EpisodeEntry]:
-        """return flushed episodes plus a snapshot of the open pending episode."""
         episodes = list(self.episodic)
         pending = self._snapshot_current_episode()
         if pending is not None:
@@ -142,7 +134,6 @@ class HierarchicalMemoryWriter:
         episode: EpisodeEntry,
         radius: int = 1,
     ) -> List[WindowEntry]:
-        """return a small local window slice for an episodic hit."""
         windows = [
             self._window_archive[wid]
             for wid in episode.member_window_ids
@@ -174,10 +165,6 @@ class HierarchicalMemoryWriter:
             "n_consolidated": self._n_consolidated,
         }
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _is_novel(self, entry: WindowEntry) -> bool:
         if not self.recent:
             return True
@@ -188,7 +175,6 @@ class HierarchicalMemoryWriter:
         return (1.0 - max(sims)) > self.novelty_threshold
 
     def _add_to_current_episode(self, window: WindowEntry) -> None:
-        """extend the current pending episode or flush and start a new one."""
         if not self._pending_episode:
             self._window_archive[window.entry_id] = window
             self._pending_episode.append(window)
@@ -221,7 +207,6 @@ class HierarchicalMemoryWriter:
             self._pending_episode.append(window)
 
     def _flush_current_episode(self) -> None:
-        """turn the pending buffer into one EpisodeEntry."""
         if not self._pending_episode:
             return
 
@@ -261,7 +246,6 @@ class HierarchicalMemoryWriter:
         self._n_episodes_flushed += 1
 
     def _snapshot_current_episode(self) -> Optional[EpisodeEntry]:
-        """read-only EpisodeEntry view of the open pending buffer."""
         if not self._pending_episode:
             return None
 
@@ -361,7 +345,6 @@ class HierarchicalMemoryWriter:
         return f"Episode {start:.1f}–{end:.1f}s ({len(windows)} windows)"
 
     def _pop_similar_episode_cluster(self) -> List[EpisodeEntry]:
-        """pop a prefix of self.episodic that forms one temporal-visual cluster."""
         if not self.episodic:
             return []
         cluster: List[EpisodeEntry] = [self.episodic[0]]
@@ -381,15 +364,12 @@ class HierarchicalMemoryWriter:
         return cluster
 
     def _consolidate_episodic(self) -> None:
-        """merge one cluster of oldest episodes into an EventEntry."""
         batch = self._pop_similar_episode_cluster()
         if not batch:
             return
 
         centroid = self._centroid([e.visual_embedding for e in batch])
 
-        # representative windows per episode — use self-centrality pooling winners stored on
-        # the episode; fall back to cosine-sim selection if ids are missing from archive.
         episode_rep_windows: List[List[WindowEntry]] = []
         rep_window_ids: List[str] = []
         for ep in batch:

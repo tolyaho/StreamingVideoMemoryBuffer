@@ -1,10 +1,3 @@
-"""X-CLIP video-language encoder for window clips and text queries.
-
-Both outputs are L2-normalised 512-dim vectors in the same joint space.
-Each window is encoded as a clip of num_frames uniformly sampled from its
-frame list, giving a temporally-aware embedding that captures short-term
-motion rather than a single still-frame appearance.
-"""
 from __future__ import annotations
 
 from typing import List, Optional
@@ -13,14 +6,11 @@ import numpy as np
 
 
 def _sample_uniform(frames: List[np.ndarray], n: int) -> List[np.ndarray]:
-    """uniformly sample n frames, repeating boundary frames if the clip is shorter."""
     indices = np.linspace(0, len(frames) - 1, n, dtype=int)
     return [frames[i] for i in indices]
 
 
 class PerceptionEncoder:
-    """wraps X-CLIP to encode short video clips and text into a shared embedding space."""
-
     def __init__(
         self,
         model_name: str = "microsoft/xclip-base-patch32",
@@ -48,11 +38,9 @@ class PerceptionEncoder:
         return self._dim
 
     def encode_window(self, raw_window) -> np.ndarray:
-        """uniformly sample num_frames from the window and return a clip embedding."""
         return self.encode_frames(raw_window.frames)
 
     def encode_frames(self, frames: List[np.ndarray]) -> np.ndarray:
-        """encode a list of RGB uint8 frames as a single clip; returns L2-normalised embedding."""
         import torch
         from PIL import Image
 
@@ -76,7 +64,6 @@ class PerceptionEncoder:
         return feats.cpu().numpy()[0].astype(np.float32)
 
     def encode_text(self, text: str) -> np.ndarray:
-        """encode a text string; returns an L2-normalised embedding."""
         import torch
 
         inputs = self.processor.tokenizer([text], return_tensors="pt", padding=True)
