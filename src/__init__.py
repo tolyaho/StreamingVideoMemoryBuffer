@@ -2,6 +2,7 @@ from .data_structures import WindowEntry, EpisodeEntry, EventEntry, RetrievalRes
 from .stream_reader import StreamReader, RawWindow
 from .perception_encoder import PerceptionEncoder
 from .memory_writer import HierarchicalMemoryWriter
+from .memory_db import MemoryStore
 from .summary_builder import SummaryBuilder
 from .retriever import HierarchicalRetriever
 from .formatter import ReasonerInputFormatter
@@ -16,6 +17,7 @@ __all__ = [
     "StreamReader",
     "PerceptionEncoder",
     "HierarchicalMemoryWriter",
+    "MemoryStore",
     "SummaryBuilder",
     "HierarchicalRetriever",
     "ReasonerInputFormatter",
