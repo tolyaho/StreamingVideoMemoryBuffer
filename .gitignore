@@ -68,3 +68,6 @@ huggingface/
 
 # Logs
 *.log
+
+# Outputs
+outputs/
