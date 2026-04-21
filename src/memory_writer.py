@@ -12,11 +12,14 @@ from __future__ import annotations
 
 import uuid
 from collections import deque
-from typing import Callable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, List, Optional, Tuple
 
 import numpy as np
 
 from .data_structures import EpisodeEntry, EventEntry, WindowEntry
+
+if TYPE_CHECKING:
+    from .memory_db import MemoryStore
 
 
 def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
@@ -68,6 +71,7 @@ class HierarchicalMemoryWriter:
         n_rep_windows: int = 2,
         summary_fn: Optional[Callable] = None,
         text_encode_fn: Optional[Callable[[str], np.ndarray]] = None,
+        store: Optional["MemoryStore"] = None,
     ):
         self.recent_capacity = recent_capacity
         self.episodic_capacity = episodic_capacity
@@ -85,6 +89,7 @@ class HierarchicalMemoryWriter:
         self.n_rep_windows = n_rep_windows
         self._summary_fn = summary_fn
         self._text_encode_fn = text_encode_fn
+        self._store = store
 
         self.recent: deque[WindowEntry] = deque()
         self.episodic: List[EpisodeEntry] = []
@@ -99,13 +104,27 @@ class HierarchicalMemoryWriter:
         self._n_consolidated = 0
 
     def update(self, window: WindowEntry) -> None:
+        if window.summary_embedding is None and window.summary_text:
+            window.summary_embedding = self._embed_summary(window.summary_text)
+
         self.recent.append(window)
+        if self._store is not None:
+            try:
+                self._store.save_window(window)
+            except Exception as exc:
+                print(f"[MemoryWriter] DB save_window failed: {exc!r}")
 
         if len(self.recent) > self.recent_capacity:
             evicted = self.recent.popleft()
             if self._is_novel(evicted):
+                evicted.tier = "episodic"
                 self._add_to_current_episode(evicted)
                 self._n_promoted += 1
+                if self._store is not None:
+                    try:
+                        self._store.save_window(evicted)
+                    except Exception as exc:
+                        print(f"[MemoryWriter] DB tier update failed: {exc!r}")
             else:
                 self._n_discarded += 1
 
@@ -114,10 +133,44 @@ class HierarchicalMemoryWriter:
             self._n_consolidated += 1
 
     def finalize(self) -> None:
+        # Drain whatever is still in the recent deque through the same
+        # novelty/promotion path used during streaming. Without this the last
+        # ``recent_capacity`` windows would be stranded with no episode
+        # membership.
+        while self.recent:
+            evicted = self.recent.popleft()
+            if self._is_novel(evicted):
+                evicted.tier = "episodic"
+                self._add_to_current_episode(evicted)
+                self._n_promoted += 1
+                if self._store is not None:
+                    try:
+                        self._store.save_window(evicted)
+                    except Exception as exc:
+                        print(f"[MemoryWriter] DB tier update failed: {exc!r}")
+            else:
+                self._n_discarded += 1
+
         self._flush_current_episode()
-        while len(self.episodic) > self.episodic_capacity:
+
+        # Force-consolidate residual episodes into events, even if below the
+        # episodic capacity — otherwise the tail of the stream never makes it
+        # into long-term memory.
+        while self.episodic:
+            before = len(self.episodic)
             self._consolidate_episodic()
             self._n_consolidated += 1
+            if len(self.episodic) >= before:
+                break  # safety: _pop_similar_episode_cluster didn't advance
+
+    def flush_pending(self) -> None:
+        """Force-close the currently-forming episode so it is searchable at query time.
+
+        Only the in-progress episode is consolidated; completed episodes stay in the
+        episodic tier so stage B (fine search) can still score them. Recent windows
+        remain queryable and the writer can continue ingesting after the call.
+        """
+        self._flush_current_episode()
 
     def get_recent_windows(self) -> List[WindowEntry]:
         return list(self.recent)
@@ -231,19 +284,23 @@ class HierarchicalMemoryWriter:
             else self._default_episode_summary(windows)
         )
 
-        self.episodic.append(
-            EpisodeEntry(
-                entry_id=f"ep-{uuid.uuid4().hex[:8]}",
-                start_time=windows[0].start_time,
-                end_time=windows[-1].end_time,
-                visual_embedding=episode_emb,
-                member_window_ids=[w.entry_id for w in windows],
-                summary_text=summary,
-                summary_embedding=self._embed_summary(summary),
-                representative_window_ids=rep_ids,
-            )
+        episode = EpisodeEntry(
+            entry_id=f"ep-{uuid.uuid4().hex[:8]}",
+            start_time=windows[0].start_time,
+            end_time=windows[-1].end_time,
+            visual_embedding=episode_emb,
+            member_window_ids=[w.entry_id for w in windows],
+            summary_text=summary,
+            summary_embedding=self._embed_summary(summary),
+            representative_window_ids=rep_ids,
         )
+        self.episodic.append(episode)
         self._n_episodes_flushed += 1
+        if self._store is not None:
+            try:
+                self._store.save_episode(episode)
+            except Exception as exc:
+                print(f"[MemoryWriter] DB save_episode failed: {exc!r}")
 
     def _snapshot_current_episode(self) -> Optional[EpisodeEntry]:
         if not self._pending_episode:
@@ -421,6 +478,11 @@ class HierarchicalMemoryWriter:
             summary_embedding=self._embed_summary(summary),
         )
         self.long_term.append(event)
+        if self._store is not None:
+            try:
+                self._store.save_event(event)
+            except Exception as exc:
+                print(f"[MemoryWriter] DB save_event failed: {exc!r}")
 
     @staticmethod
     def _default_event_summary(episodes: List[EpisodeEntry]) -> str:
