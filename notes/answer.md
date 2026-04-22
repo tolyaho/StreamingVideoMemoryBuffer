@@ -1,11 +1,5 @@
-## 7. Baseline comparison — does hierarchy actually help?
+## 8. Actually Long Video
 
-§6 ran the full hierarchical stack on the 5 sample_36 QAs. This section reruns exactly the same end-to-end loop, but with `RecentWindowBaseline` in place of `HierarchicalRetriever` — the SimpleStream-style [[1]](https://arxiv.org/abs/2604.02317) flat recent-frames buffer that most current streaming VQA systems use as their default, and a surprisingly strong one on short-horizon benchmarks.
+The whole point of a hierarchical memory is to keep answering questions correctly after content has rolled out of the recent window, and 17 min (the video I tested on) doesn't really stress that. So for this section I grabbed one of the LVBench videos — YouTube id `16Z-XQh9jhk`, an 84 min live concert — which is handy because LVBench ships QAs with it, $22$ of them for this clip, covering entity recognition, event understanding, temporal grounding and reasoning. I pulled them out of `video_info.meta.jsonl` and reformatted into the same `question / options / answer / time_stamp` shape I've been using, saved to `data/lvbench/16Z-XQh9jhk/qas.jsonl`.
 
-Implemented in `baseline.py` as `RecentWindowBaseline`: a `deque(maxlen=N)` of `WindowEntry`, cosine-scored against `q_emb` at query time. No episodes, no events, no consolidation, no temporal decay — just the last N windows and nearest-neighbour search over them.
-
-### What stays fixed
-
-Everything downstream of retrieval. Same `ReasonerInputFormatter`, same `LLMReasoner` (Qwen2.5-3B-Instruct, greedy, same system prompt, same MCQ template), same 5 QAs at the same stream timestamps. The baseline's top-k windows are packed into a `RetrievalResult` with empty `coarse_hits` / `episodic_hits` and the windows as `grounded_windows`, so the `text_context` block the LLM sees has the same shape — just one tier instead of three.
-
-Isolating the retriever is the whole point of §6's split: any delta in MCQ accuracy between §6 and §7 is attributable to the memory design, not the reasoner. The hypothesis is that the baseline is competitive when the answer lives in the last ~60 s of the stream and loses on QAs that reference earlier segments that have already rolled out of the deque.
+This time I also switch on the persistence layer I wrote in `src/memory_db.py` (`MemoryStore`, peewee/SQLite) — windows, episodes and events get flushed to `outputs/memory_16Z-XQh9jhk.db` as they're built. It's a durable sidecar, not a RAM offload: retrieval still runs against the in-memory writer state, and the window archive stays in Python for the whole run. The db is for post-run inspection and for being able to pick up where I left off if a long run dies halfway through.

@@ -4,7 +4,7 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 
 ---
 
-## Status on 2026-04-22 (late — post LLM-integration cell)
+## Status on 2026-04-22 (late — post §6 Reasoner + §7 Baseline cells)
 
 **Implementation (src/)**: complete. All nine modules in `src/__init__.py`
 are wired up, tested (4 test files under `tests/`), and exercised
@@ -16,8 +16,8 @@ to `memory.db` is working and the offline QA harness
 (`outputs/retrievals.md`, `EVALUATION_REPORT.md`) reports 5/5 right-time
 retrieval on sample_36.
 
-**Notebook (solution.ipynb)**: 6 sections (§0 Setup → §5 LLM input
-integration), plus a stub §6 conclusion heading and References.
+**Notebook (solution.ipynb)**: 9 sections (§0 Setup → §8 Actually Long
+Video, the last one is a stub heading for the remaining long-video run).
 Assignment sections 1 (memory design) and 2 (storage strategy) are
 covered with prose + a working streaming demo on `sample_1` (63
 windows · 16 episodes · 5 events in 82 s). Assignment section 3
@@ -38,26 +38,35 @@ the exact string (system + evidence + user) that would be fed to the
 LLM — the `[evidence]` block is the real `llm_input['text_context']`,
 interpolated directly (not a placeholder).
 
-**Remaining work to close the loop — two short cells + optional long-video run:**
-1. A **baseline cell**: same 5 sample_36 QAs run through
-   `RecentWindowBaseline.retrieve(...)`, printed side-by-side with the
-   hierarchical result; one sentence per query on which one won and
-   why. (`RecentWindowBaseline` exists in `baseline.py` but is still
-   not imported anywhere in the notebook.)
-2. **Section 6 is a stub** (`## 6.` heading with no body) — needs the
-   trade-offs / limitations markdown cell. ARCHITECTURE §15 + the
-   EVALUATION_REPORT residuals have all the material; a 3–5-sentence
-   summary pointing at them is enough.
-3. **Long-video sanity test (1h+)** — the assignment suggests "e.g.
-   1h+" as an example video length. Longest tested: `sample_36` at
-   17 min. Architecture is bounded by construction (recent deque=20,
-   episodic list=50, events slow-growing, no O(N²) retrieval), but
-   scaling has never been empirically verified on hour-long footage.
-   Expected wall time: ~3–4 h on CUDA with all three VLMs active
-   (Florence ~1200 calls + Moondream ~100–200 + Qwen ~10–30). Biggest
-   unknown: whether the documented intro-event dominance failure
-   (ARCHITECTURE §15) scales linearly or exponentially with stream
-   length. See `### Long-video run — preflight checklist` below.
+**Shipped since last status**:
+- **§6 LLM Reasoner** — `src/llm_reasoner.py` (Qwen2.5-3B-Instruct,
+  text-only, bf16, greedy, MCQ letter + time-range citation prompt).
+  Live end-to-end cell answers all 5 sample_36 QAs during streaming
+  using `mem.flush_pending()` + `query_time=stream_time`. Scored
+  **3/5** on sample_36.
+- **§7 Baseline comparison** — `RecentWindowBaseline` now imported in
+  the notebook. Same end-to-end loop as §6 with flat recent-frames
+  retrieval packed into a `RetrievalResult` so the reasoner sees the
+  same prompt shape. Scored **2/5** on sample_36. Description in
+  `notes/answer.md`; conclusion paragraph in `notes/conclusion.md`.
+- **`notes/answer.md`** rewritten with §6 + §7 prose in the first-person
+  voice matching §5.
+
+**Remaining work — one long-video run (§8):**
+1. **§8 "Actually Long Video"** — the assignment suggests "e.g. 1h+".
+   Longest tested so far: `sample_36` at 17 min. Architecture is
+   bounded by construction (recent deque=20, episodic list=50, events
+   slow-growing, no O(N²) retrieval), but scaling has never been
+   empirically verified on hour-long footage. Expected wall time:
+   ~3–4 h on CUDA with all three VLMs active (Florence ~1200 calls +
+   Moondream ~100–200 + Qwen ~10–30). Biggest unknown: whether the
+   documented intro-event dominance failure (ARCHITECTURE §15) scales
+   linearly or exponentially with stream length. Dataset options:
+   **LVBench** (1h avg, has memory-requiring QAs), **HourVideo**
+   (egocentric 20–120 min, 12K QAs), **MLVU** long subset, or a
+   single hand-curated MIT OCW lecture with auto-generated QAs
+   verified manually. See `### Long-video run — preflight checklist`
+   below.
 
 Stretch (not required for the core deliverable): tier-size-over-time
 plot, inline thumbnails of retrieved frames, a keyword-in-caption P@k
@@ -281,8 +290,8 @@ grounding hits per QA).
 - [x] Real Qwen2.5-VL event summaries visible in cell 27 output (5 event boxes rendered)
 - [x] **Retrieval section with rationale + example queries** (cell 29 §4 writeup incl. query encoding, three-stage coarse-to-fine, multiplicative decay, unified span, tier-split visual scoring; cells 31–36 embed `sample_36` video, wire the retriever, and fire all 5 QAs at their QA timestamps via `fire_due(...)`)
 - [x] Retrieval evidence printed inline per QA — coarse events + episodic hits + grounded windows with sim scores, via `ReasonerInputFormatter.format_text(result)` wrapped by `wrap_formatted` for readable line-width
-- [ ] **Baseline section with rationale + retrieve() demo** (`RecentWindowBaseline` is not imported or used anywhere in the notebook)
-- [ ] **Baseline vs hierarchical side-by-side comparison on the same query**
+- [x] **Baseline section with rationale + retrieve() demo** — §7 imports `RecentWindowBaseline` and runs the same 5 sample_36 QAs end-to-end through the same reasoner (MCQ accuracy 2/5 vs hierarchical's 3/5)
+- [x] **Baseline vs hierarchical side-by-side comparison on the same query** — §7 output pairs naturally with §6 output; brief conclusion in `notes/conclusion.md`
 - [x] **LLM input formatter section with rationale + `format_for_llm` demo** — §5 writeup covers the full-VLM option space (projector / raw-frames-into-VLM / Q-Former) and states why only the text-context path is shipped; the final code cell calls `format_for_llm(result, query_embedding=q_emb)` on the first sample_36 QA, prints the visual-context slot per hit, and prints the exact prompt (system + `[evidence] = llm_input['text_context']` + user) fed to the LLM
 - [ ] Retrieval timeline / thumbnail visualisation per query (stretch)
 - [ ] Memory tier size plot over time (stretch)
@@ -298,10 +307,10 @@ grounding hits per QA).
 - [x] Sample_36 cooking video embedded (cell 31, HTML5 `<video>` with controls) so graders can watch alongside the retrieval output
 - [x] `HierarchicalRetriever.retrieve(...)` wired in (cell 36) and fired at every QA timestamp during the streaming loop (`fire_due(...)` from cell 33 calls `mem.flush_pending()` before each retrieval so boundary episodes are visible); all 5 QAs from `sample_36/qas.json` printed with coarse / episodic / grounding evidence via `ReasonerInputFormatter.format_text`
 - [ ] Display actual sampled frames from the real video with timestamps (matplotlib grid — easy addition)
-- [ ] Run the same queries against `RecentWindowBaseline.retrieve(...)` and print both side-by-side; state where hierarchical wins and where recent-only is already enough
+- [x] Run the same queries against `RecentWindowBaseline.retrieve(...)` and print both side-by-side — §7 cell (MCQ accuracy 2/5 baseline vs 3/5 hierarchical on sample_36)
 - [x] Show `ReasonerInputFormatter.format_for_llm(result, query_embedding=...)` output for one query (dict with `visual_context`/`text_context`) to demonstrate the LLM integration — shipped in §5
 - [ ] Note obvious failure cases (intro-event domination, named-entity hallucinations, colour captions) referencing ARCHITECTURE §15 + EVALUATION_REPORT
-- [ ] Run on a 1h+ video once the §6 conclusion + baseline cell land — see preflight checklist in the Status section
+- [ ] Run on a 1h+ video (§8) — pick LVBench / HourVideo / MLVU long subset or a hand-curated OCW lecture; see preflight checklist in the Status section
 
 ### Assignment questions the notebook must answer
 - [x] What is stored in memory? (§3 prose)
@@ -311,8 +320,8 @@ grounding hits per QA).
 - [x] How is retrieval done (coarse-to-fine)? — §4 markdown + live demo on sample_36 (5 QAs)
 - [x] How are summaries used at query time? — §4 explains β·summary_sim term; live output shows summary text alongside each coarse / episodic hit with sim score
 - [x] How is retrieved memory formatted for LLM input? — §5 writeup + `format_for_llm` demo on sample_36 QA 0, prints both the visual-context slot breakdown and the exact prompt (system / [evidence] = real `text_context` / user) fed to the LLM
-- [ ] When does hierarchical memory help vs recent-window baseline? — no comparison cell
-- [ ] What are the main limitations? — §6 heading is a stub, conclusion cell not yet written
+- [x] When does hierarchical memory help vs recent-window baseline? — §7 side-by-side on sample_36 (3/5 hierarchical vs 2/5 baseline); flipped QA is the held-object question where the referenced item had rolled out of the recent deque but survived as an episode summary
+- [x] What are the main limitations? — documented in ARCHITECTURE §15 (captioner ceiling, intro-event dominance, no cross-event state) and the `notes/conclusion.md` paragraph; longer-video scaling risks enumerated in ARCHITECTURE §17 and the preflight checklist above
 
 ---
 
