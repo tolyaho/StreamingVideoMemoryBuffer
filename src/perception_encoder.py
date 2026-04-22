@@ -11,11 +11,7 @@ def _sample_uniform(frames: List[np.ndarray], n: int) -> List[np.ndarray]:
 
 
 def _chunk_token_ids(ids: List[int], chunk_size: int) -> List[List[int]]:
-    """Split a flat id stream into fixed-size chunks, preserving order.
-
-    Empty input yields ``[[]]`` so the caller can still emit one forward pass
-    (wrapped with BOS/EOS) and get a defined embedding for an empty string.
-    """
+    """split a flat id stream into fixed-size chunks, preserving order."""
     if chunk_size <= 0:
         raise ValueError(f"chunk_size must be positive, got {chunk_size}")
     if not ids:
@@ -77,15 +73,9 @@ class PerceptionEncoder:
         return feats.cpu().numpy()[0].astype(np.float32)
 
     def encode_text(self, text: str) -> np.ndarray:
-        """Encode ``text`` into a single L2-normalised embedding.
-
-        X-CLIP's text encoder inherits CLIP's 77-token position limit.
-        Long event summaries (hundreds of tokens) blow past it, so we tokenize
-        without truncation, split into ≤75-token content chunks (2 slots
-        reserved for BOS/EOS), batch-forward, unit-normalise each chunk
-        embedding, mean-pool, and renormalise the result.
-        """
+        """encode text into a single L2-normalised embedding."""
         import torch
+        from transformers import logging as hf_logging
 
         tokenizer = self.processor.tokenizer
         max_len = tokenizer.model_max_length
@@ -94,9 +84,6 @@ class PerceptionEncoder:
         pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else eos_id
         chunk_content = max_len - 2  # reserve 2 slots for BOS + EOS
 
-        # HF emits a "sequence longer than model_max_length" warning for every
-        # oversized input — noisy, and wrong in our context since we chunk.
-        from transformers import logging as hf_logging
         prev_verbosity = hf_logging.get_verbosity()
         hf_logging.set_verbosity_error()
         try:
