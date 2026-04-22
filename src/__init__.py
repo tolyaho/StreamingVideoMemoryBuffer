@@ -7,6 +7,7 @@ from .summary_builder import SummaryBuilder
 from .retriever import HierarchicalRetriever
 from .formatter import ReasonerInputFormatter
 from .baseline import RecentWindowBaseline
+from .llm_reasoner import LLMReasoner, build_prompt as build_llm_prompt
 
 __all__ = [
     "WindowEntry",
@@ -22,4 +23,6 @@ __all__ = [
     "HierarchicalRetriever",
     "ReasonerInputFormatter",
     "RecentWindowBaseline",
+    "LLMReasoner",
+    "build_llm_prompt",
 ]

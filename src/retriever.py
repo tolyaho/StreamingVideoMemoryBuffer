@@ -12,11 +12,25 @@ Score = (alpha * visual_sim + beta * summary_sim) * exp(-dt / tau),
 
 where ``dt`` is the temporal distance between ``query_time`` and the entry's
 time range (0 if the entry straddles ``query_time``) and ``tau`` is a fraction
-of the stream span. The multiplicative prior discounts far-in-time entries
+of a **single unified span** shared across all three tiers — the full time
+range covered by the union of recent windows, episodes and events. Using one
+ruler everywhere keeps the decay comparable across tiers: an event that
+straddles ``query_time`` gets decay=1.0 just like a recent window, instead of
+being penalized by a tier-local span that was always wider than the recent
+queue's. The multiplicative prior still discounts far-in-time entries
 proportionally to their semantic score, so a semantically dominant but
 temporally distant event cannot out-rank a closer one on recency-sensitive
 queries — unlike the additive ``gamma * bonus`` form, which capped the
 temporal contribution and left room for length-bias "centroid" events to win.
+
+``visual_sim`` splits by tier. For events we score the query against each
+``representative_window_ids`` embedding and take the max cosine — event
+centroids are centroids-of-centroids (episode means averaged again), which
+smears peaked semantic content, so peak-over-reps undoes that blur. For
+episodes we keep the pooled centroid: self-centrality pooling already
+weights members by centrality and visual agreement, so the episode vector
+sits on the "typical" frame and doesn't suffer the same 2-stage-averaging
+blur that events do. Recent windows use their own embedding directly.
 
 When ``summary_embedding`` is None, the visual term takes full semantic
 weight. When ``query_time`` is None, the decay collapses to 1.0 (pure
@@ -86,10 +100,13 @@ class HierarchicalRetriever:
         q_sum_emb = query_summary_embedding if query_summary_embedding is not None else query_embedding
 
         recent = memory.get_recent_windows()
+        searchable_episodes = memory.get_searchable_episodes()
+        span = self._unified_span(recent, searchable_episodes, memory.long_term)
+        rep_vectors = self._build_rep_index(memory, memory.long_term)
+
         recent_hits: List[WindowEntry] = []
         recent_scores: dict = {}
         if recent:
-            span = self._time_span(recent)
             scored_recent = []
             for w in recent:
                 decay = self._time_decay(
@@ -101,7 +118,7 @@ class HierarchicalRetriever:
                 score = self._blended_score(
                     query_embedding,
                     q_sum_emb,
-                    w.visual_embedding,
+                    [w.visual_embedding],
                     w.summary_embedding,
                     decay=decay,
                 )
@@ -112,15 +129,17 @@ class HierarchicalRetriever:
             recent_scores = {w.entry_id: sc for sc, w in top}
 
         coarse_hits, coarse_scores, candidate_ranges = self._coarse_route(
-            query_embedding, q_sum_emb, memory.long_term, top_m, query_time=query_time
+            query_embedding, q_sum_emb, memory.long_term, top_m, span,
+            rep_vectors, query_time=query_time,
         )
 
         episodic_hits, episodic_scores = self._fine_search(
             query_embedding,
             q_sum_emb,
-            memory.get_searchable_episodes(),
+            searchable_episodes,
             candidate_ranges,
             top_k,
+            span,
             query_time=query_time,
             recent_n=recent_episodes,
         )
@@ -150,11 +169,15 @@ class HierarchicalRetriever:
         self,
         query_vis_emb: np.ndarray,
         query_txt_emb: np.ndarray,
-        visual_emb: np.ndarray,
+        visual_embs: List[np.ndarray],
         summary_emb: Optional[np.ndarray],
         decay: float,
     ) -> float:
-        vis_sim = cosine_sim(query_vis_emb, visual_emb)
+        # Peak-over-vectors: for events we pass multiple representative-window
+        # embeddings and take the max cosine to undo centroid-of-centroids blur.
+        # Episodes and recent windows pass a single-element list (pooled episode
+        # centroid / own embedding), so max() degenerates to a plain cosine.
+        vis_sim = max(cosine_sim(query_vis_emb, v) for v in visual_embs)
         if summary_emb is not None:
             txt_sim = cosine_sim(query_txt_emb, summary_emb)
             semantic = self.alpha * vis_sim + self.beta * txt_sim
@@ -162,18 +185,41 @@ class HierarchicalRetriever:
             semantic = vis_sim
         return semantic * decay
 
+    @staticmethod
+    def _build_rep_index(memory, events) -> dict:
+        archive = memory._window_archive
+        index: dict = {}
+        for entry in events:
+            rep_ids = getattr(entry, "representative_window_ids", None)
+            if not rep_ids:
+                continue
+            vecs = [
+                archive[wid].visual_embedding
+                for wid in rep_ids
+                if wid in archive
+            ]
+            if vecs:
+                index[entry.entry_id] = vecs
+        return index
+
+    @staticmethod
+    def _vectors_for(entry, rep_vectors: dict) -> List[np.ndarray]:
+        reps = rep_vectors.get(entry.entry_id)
+        return reps if reps else [entry.visual_embedding]
+
     def _coarse_route(
         self,
         query_vis_emb: np.ndarray,
         query_txt_emb: np.ndarray,
         long_term: List[EventEntry],
         top_m: int,
+        span: float,
+        rep_vectors: dict,
         query_time: Optional[float] = None,
     ) -> Tuple[List[EventEntry], dict, List[Tuple[float, float]]]:
         if not long_term:
             return [], {}, []
 
-        span = self._time_span(long_term)
         scored = []
         for ev in long_term:
             decay = self._time_decay(
@@ -185,7 +231,7 @@ class HierarchicalRetriever:
             score = self._blended_score(
                 query_vis_emb,
                 query_txt_emb,
-                ev.visual_embedding,
+                self._vectors_for(ev, rep_vectors),
                 ev.summary_embedding,
                 decay=decay,
             )
@@ -214,6 +260,7 @@ class HierarchicalRetriever:
         episodic: List[EpisodeEntry],
         candidate_ranges: List[Tuple[float, float]],
         top_k: int,
+        span: float,
         query_time: Optional[float] = None,
         recent_n: int = 5,
     ) -> Tuple[List[EpisodeEntry], dict]:
@@ -242,8 +289,6 @@ class HierarchicalRetriever:
         else:
             candidates = episodic
 
-        span = self._time_span(episodic)
-
         scored = []
         for ep in candidates:
             decay = self._time_decay(
@@ -255,7 +300,7 @@ class HierarchicalRetriever:
             score = self._blended_score(
                 query_vis_emb,
                 query_txt_emb,
-                ep.visual_embedding,
+                [ep.visual_embedding],
                 ep.summary_embedding,
                 decay=decay,
             )
@@ -267,11 +312,14 @@ class HierarchicalRetriever:
         return hits, scores
 
     @staticmethod
-    def _time_span(entries) -> float:
-        if not entries:
+    def _unified_span(*tiers) -> float:
+        starts, ends = [], []
+        for tier in tiers:
+            for e in tier:
+                starts.append(e.start_time)
+                ends.append(e.end_time)
+        if not starts:
             return 1.0
-        starts = [e.start_time for e in entries]
-        ends = [e.end_time for e in entries]
         return max(max(ends) - min(starts), 1.0)
 
     def _time_decay(

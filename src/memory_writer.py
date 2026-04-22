@@ -133,10 +133,6 @@ class HierarchicalMemoryWriter:
             self._n_consolidated += 1
 
     def finalize(self) -> None:
-        # Drain whatever is still in the recent deque through the same
-        # novelty/promotion path used during streaming. Without this the last
-        # ``recent_capacity`` windows would be stranded with no episode
-        # membership.
         while self.recent:
             evicted = self.recent.popleft()
             if self._is_novel(evicted):
@@ -153,23 +149,14 @@ class HierarchicalMemoryWriter:
 
         self._flush_current_episode()
 
-        # Force-consolidate residual episodes into events, even if below the
-        # episodic capacity — otherwise the tail of the stream never makes it
-        # into long-term memory.
         while self.episodic:
             before = len(self.episodic)
             self._consolidate_episodic()
             self._n_consolidated += 1
             if len(self.episodic) >= before:
-                break  # safety: _pop_similar_episode_cluster didn't advance
+                break
 
     def flush_pending(self) -> None:
-        """Force-close the currently-forming episode so it is searchable at query time.
-
-        Only the in-progress episode is consolidated; completed episodes stay in the
-        episodic tier so stage B (fine search) can still score them. Recent windows
-        remain queryable and the writer can continue ingesting after the call.
-        """
         self._flush_current_episode()
 
     def get_recent_windows(self) -> List[WindowEntry]:
@@ -345,18 +332,8 @@ class HierarchicalMemoryWriter:
         mu_consistency: float = 0.5,
         n_rep: int = 2,
     ) -> Tuple[np.ndarray, List[int]]:
-        """time-aware self-centrality pooling over an ordered sequence of window embeddings.
-
-        For each window i:
-          center_score_i    = -(t_i - t_center)^2 / (2 * sigma_center^2)
-          consistency_score_i = sum_j exp(-|t_i - t_j| / sigma_time) * cos(w_i, w_j)
-          score_i           = lambda_center * center_score_i + mu_consistency * consistency_score_i
-          alpha_i           = softmax(score_i)
-        episode_embedding = sum_i alpha_i * w_i   (L2-normalised)
-
-        Returns the pooled embedding and the indices of the top-n_rep highest-weight windows
-        in temporal order (useful as representative windows for summarisation).
-        """
+        """time-aware self-centrality pooling over an ordered sequence of window embeddings."""
+    
         n = len(embeddings)
         if n == 1:
             return embeddings[0].copy(), [0]

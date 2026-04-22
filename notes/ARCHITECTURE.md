@@ -376,10 +376,19 @@ with:
 - `tau`   = `tau_fraction * stream_span`, default `tau_fraction = 0.50` (half-span-away → multiplier ~0.37; full-span-away → ~0.14)
 - `dt`    = temporal distance between `query_time` and the entry's time range; 0 if the entry straddles `query_time`
 - `query_time = None` collapses the decay to 1.0 (pure semantic ranking)
+- `stream_span` = **unified** span across `recent ∪ episodes ∪ events` — one ruler for all tiers, so an event straddling `query_time` gets decay=1.0 just like a recent window. A tier-local span was always wider than the recent queue's, so recent windows got decay ≈ 1.0 for free while events were penalised by a much larger denominator — one of two causes of the sim-score gap between tiers.
 
 Why multiplicative and not the older additive `+ gamma * recency_bonus`: the additive term caps the temporal contribution at `gamma` regardless of how far the entry is in time, so a long, "everything-centroid" event (e.g. a 68 s intro with a 1.4 k-char summary) that matches most kitchen queries could still out-score a correct mid-stream event because `gamma * bonus` could only claw back ≤ `gamma`. A multiplicative `exp(-dt/tau)` prior scales *semantic* score down proportionally — a temporally distant event loses in direct proportion to how strong its semantic match is, which is the correct behaviour for recency-sensitive QAs. This is the same shape used in news / social-feed ranking (Twitter, Reddit, freshness-aware BM25).
 
-This keeps the system visual-first, consistent with multimodal-memory approaches like StreamBridge, while structurally suppressing length-bias centroid failures.
+**Visual-similarity term splits by tier.** The naive form `cos(q_vis, entry.visual_embedding)` reads the *stored centroid* for all three tiers, but centroid blur is asymmetric across tiers:
+
+- **Events** store a centroid-of-centroids (episode means averaged again). That 2-stage averaging smears peaked semantic content — the event vector drifts toward a generic "typical scene" that under-scores against any specific query. **Fix: peak-over-reps.** Score the query against each embedding in `representative_window_ids` and take the max cosine: `vis_sim(event) = max_{w ∈ reps(event)} cos(q_vis, w_vis)`. The rep windows are the pooling winners already persisted for grounding, so this is free at read time.
+- **Episodes** store a time-aware self-centrality pooled vector (softmax over centrality + consistency scores). The pooling already weights members toward the central, visually-agreeing frame, so the episode vector sits on the "typical frame" rather than on the arithmetic mean. It does not suffer the centroids-of-centroids blur events do — we keep the stored centroid for episode scoring.
+- **Recent windows** use their own embedding directly — no pooling, no blur.
+
+The centroid is still fully used at write time for both tiers: novelty gate, episode-to-event clustering, and the persisted topic vector. Peak-over-reps is purely a read-time rescoring — storage is unchanged.
+
+This keeps the system visual-first, consistent with multimodal-memory approaches like StreamBridge, while structurally suppressing length-bias centroid failures and closing the cross-tier sim-score gap.
 
 ### Retrieval output
 
@@ -658,7 +667,11 @@ This section records the debugging journey of the last iteration — the order t
 
 13. **Intro-event domination — additive γ cannot fix it.** EVALUATION_REPORT §1: the `[0–68 s]` intro event won a slot in all five coarse top-3s with sim 0.205–0.245. Root cause: it's simultaneously the longest event (68 s), has the longest summary (~1.4 k chars — more surface area for token overlap with kitchen queries), and has a visual embedding that reads as a "generic kitchen centroid". Under the additive `α·vis + β·txt + γ·recency` form, bumping γ (0.05 → 0.15 → 0.25) can only add at most γ to the temporal-near entry and subtract nothing from the temporal-far intro, so the intro keeps winning whenever its semantic lead exceeds γ. **Fix: switch the temporal term from additive bonus to multiplicative prior**, `score = (α·vis + β·txt) · exp(-dt/τ)`. A temporally distant entry is now scaled down in proportion to its semantic score, which structurally kills the centroid-wins-everything failure. `α=0.70, β=0.30, τ = 0.50 · stream_span` (initial 0.25 was too sharp — see parameter-history table); γ as a parameter is removed. Test: `tests/test_retriever.py::test_multiplicative_decay_suppresses_semantically_strong_distant_entry`.
 
-14. **Window text channel silently dead at grounding stage.** After the weight rebalance to `α=0.70, β=0.30`, stage-C grounding was still scoring windows on visual similarity alone: `WindowEntry.summary_text` was populated by the per-window caption path, but `summary_embedding` stayed `None` because the writer never embedded it. The retriever's β term short-circuited to 0 for every window, so `β=0.30` was dead weight at the finest tier — the one that actually answers the QA. Episodes and events were unaffected (they go through `_embed_summary()` on consolidation). Fix: `HierarchicalMemoryWriter.update(window)` now calls `self._embed_summary(window.summary_text)` when `summary_embedding is None and summary_text` is non-empty; caller-provided embeddings are preserved (batched upstream paths keep working). No schema change — `Window.summary_embedding` was already persisted as a `BlobField`. No wiring change in `scripts/main.py` — `text_encode_fn=encoder.encode_text` was already plumbed through the constructor (process-log item before this one). Test: `tests/test_memory_writer.py::WindowSummaryEmbeddingTests`.
+14. **Unified decay span across tiers.** After the multiplicative-decay switch, sim-score printouts still showed a systematic gap: recent windows sat around 0.25–0.35, episodes around 0.05–0.08, events around 0.01–0.03. Part of the gap was the decay denominator: each tier computed its own `stream_span` locally, and since the recent queue spans at most `recent_capacity * window_duration` (~60 s) while events span the full stream (~minutes to hours), the recent-tier `tau` was always far tighter than the event-tier `tau`. A recent window straddling `query_time` got `decay=1.0`; an event also straddling `query_time` was punished by a much larger denominator somewhere else along the exponential curve. Fix: compute a single **unified span** across `recent ∪ episodes ∪ events` in `HierarchicalRetriever.retrieve()` and pass it down to all three scoring passes. The span is now one ruler — straddling entries get `decay=1.0` at every tier, and the far ends of the stream compare like-for-like.
+
+15. **Tier-split visual scoring — peak-over-reps for events, centroid for episodes.** Unified span closed part of the gap but raw semantic cosines remained 3–4× lower at the event tier than at the window tier. Second root cause: **centroid blur**. Event embeddings are centroids-of-centroids — episode means averaged again — so a peaked semantic feature in one member window gets smeared across two pooling stages. Against any specific query, the event cosine drops toward "generic scene" rather than the strongest matching moment. Fix: at read time, score the query against each embedding in `representative_window_ids` (already persisted for grounding) and take `max_{w ∈ reps(e)} cos(q_vis, w_vis)`. A new `_build_rep_index(memory, events)` helper builds the lookup once per `retrieve()` call; `_vectors_for(entry, rep_vectors)` falls back to `[entry.visual_embedding]` when an entry has no reps. Episodes are deliberately kept on the stored centroid — time-aware self-centrality pooling already weights members by centrality and visual agreement, so the episode vector sits on the "typical frame" without the 2-stage averaging blur events have; peak-over-reps on episodes would fight that pooling rather than complement it. Recent windows pass their own embedding directly. `_blended_score` takes a `List[np.ndarray]` and `max()`s over it, so the episode/window path degenerates to a plain cosine. Storage and write-time semantics are unchanged: centroid still drives the novelty gate, episode-to-event clustering, and the stored topic vector.
+
+16. **Window text channel silently dead at grounding stage.** After the weight rebalance to `α=0.70, β=0.30`, stage-C grounding was still scoring windows on visual similarity alone: `WindowEntry.summary_text` was populated by the per-window caption path, but `summary_embedding` stayed `None` because the writer never embedded it. The retriever's β term short-circuited to 0 for every window, so `β=0.30` was dead weight at the finest tier — the one that actually answers the QA. Episodes and events were unaffected (they go through `_embed_summary()` on consolidation). Fix: `HierarchicalMemoryWriter.update(window)` now calls `self._embed_summary(window.summary_text)` when `summary_embedding is None and summary_text` is non-empty; caller-provided embeddings are preserved (batched upstream paths keep working). No schema change — `Window.summary_embedding` was already persisted as a `BlobField`. No wiring change in `scripts/main.py` — `text_encode_fn=encoder.encode_text` was already plumbed through the constructor (process-log item before this one). Test: `tests/test_memory_writer.py::WindowSummaryEmbeddingTests`.
 
 ### Parameter history
 
@@ -686,3 +699,122 @@ This section records the debugging journey of the last iteration — the order t
 | Fine-stage candidate pool | coarse-gated only (fallback to all on empty overlap) | coarse-gated ∪ `episodic[-recent_episodes:]` | tail episodes not yet consolidated into any event were silently gated out; bypass mirrors the recent-windows pass in stage 0 |
 | `recent_episodes` (new) | — | 5 | trailing-episode bypass count; symmetric with `top_k` for recent-windows search |
 | Window `summary_embedding` at ingest | not written (stayed `None`) | embedded in `HierarchicalMemoryWriter.update()` when `summary_text` is present and no embedding was provided | β·txt term was silently zeroed at stage-C grounding; β=0.30 of scoring weight was dead weight for windows. Caller-provided embeddings are preserved (batched upstream paths unaffected). |
+| Decay span scope | per-tier local `stream_span` | **unified** across `recent ∪ episodes ∪ events` (computed once per `retrieve()` call) | tier-local spans gave recent-tier scoring a much tighter `tau` than the event tier, so a window straddling `query_time` got decay=1.0 while an event straddling `query_time` was penalised by a far larger denominator — one of two causes of the cross-tier sim-score gap |
+| Event visual similarity | `cos(q_vis, event.visual_embedding)` (stored centroid) | `max_{w ∈ reps(event)} cos(q_vis, w_vis)` (peak over representative windows) | event embeddings are centroids-of-centroids (episode means averaged again); the 2-stage averaging smears peaked semantic content and drops cosines toward "generic scene". Peak-over-reps uses the grounding-pool winners already persisted on `EventEntry.representative_window_ids` — no extra storage. |
+| Episode visual similarity | — | `cos(q_vis, episode.visual_embedding)` (stored centroid, unchanged) | considered peak-over-reps for symmetry, kept centroid instead: time-aware self-centrality pooling already weights members by centrality + visual agreement, so the episode vector sits on the "typical frame" without the centroids-of-centroids blur events have; peak-over-reps would fight that pooling rather than complement it |
+| Rep-vector lookup | — | `_build_rep_index(memory, events)` built once per `retrieve()` call, maps `entry_id → List[w.visual_embedding]` via `_window_archive` | amortises archive lookups across the three scoring passes; falls back to `[entry.visual_embedding]` in `_vectors_for(...)` when no reps are stored |
+
+---
+
+## 17. Scaling to long (1h+) video
+
+The assignment suggests "e.g. 1h+" as an example stream length. The
+longest clip the system has actually been exercised on is `sample_36`
+at **17 min**. Everything below is a scaling analysis — it explains
+what the architecture predicts should happen at 1h+, what is bounded
+by construction, and what has never been empirically verified.
+
+### Per-tier growth bounds
+
+| Tier | Data structure | Bound | 1h projection |
+|------|----------------|-------|---------------|
+| Recent windows | `collections.deque(maxlen=recent_capacity)` | **Hard cap 20** | 20 |
+| Episodic | `list`, capped at `episodic_capacity=50` via consolidation | **Hard cap 50** (consolidates into events when full) | 50 |
+| Long-term events | `list`, no cap | **Slow-growing** | ~5–30 at current `event_max_gap=15s` / `event_min_sim=0.55` |
+| Window archive (`_window_archive: Dict[entry_id, WindowEntry]`) | dict | **Unbounded** (every ingested window stays addressable for grounding) | 3600 windows @ 1 fps / 1 window = 3 s |
+
+The first three are bounded by construction and require no change for
+longer streams. The fourth is the only structurally unbounded
+container on the write path.
+
+### Retrieval cost at stream length N windows
+
+Per `retrieve()` call:
+- **Stage 0 (recent)**: O(`recent_capacity`) = O(20), independent of N.
+- **Stage A (coarse events)**: O(|events|) with `max`-over-reps
+  replacing stored centroid similarity — per event costs O(|reps|),
+  and `|reps|` is capped by the pooling at ~3–5 windows.
+  Effectively O(|events| · 5).
+- **Stage B (fine episodes)**: O(|coarse-gated episodes| ∪
+  `recent_episodes`). Coarse-gated subset has an upper bound of
+  `|episodes|` = 50 by the write-path cap; the bypass adds at most 5
+  more. Effectively O(55).
+- **Stage C (grounding windows)**: O(sum of `member_window_ids` across
+  fine hits). Per-episode member counts are bounded by
+  `episode_max_len`, which caps at the time-gap based episode-flush
+  policy — typically 5–15 members.
+- **`_build_rep_index`**: O(|events| · |reps|) dict build, amortised
+  over the three scoring passes.
+
+**No O(N²) operations.** Retrieval is linear in the number of *summary*
+entries (events + episodes), both of which are capped or slow-growing,
+not linear in raw window count N.
+
+### Wall-clock projection for a 1h video
+
+Rough per-stage costs, measured on the 3-min sample_1 run (63 windows,
+16 episodes, 5 events in 82 s on CUDA with all three VLMs):
+
+| Stage | 3-min cost | 1h projection (20× scaling) |
+|-------|-----------|-----------------------------|
+| X-CLIP window encoding | ~20 s | ~7 min |
+| Florence-2 window caption (per window, fixed cost) | ~30 s (63 × 0.5 s) | ~30 min (3600 × 0.5 s) |
+| Moondream2 episode caption (per promoted window, self-centrality winners only) | ~15 s (16 episodes × ~3 wins × 0.3 s) | ~20–40 min (5–15× more episodes at 1h) |
+| Qwen2.5-VL event fusion (per event, up to 10 frames) | ~17 s (5 × ~3 s) | ~5–30 min (5–30 events × 1–3 s) |
+| **Total** | **~82 s** | **~1.5–2 h** on a single CUDA GPU |
+
+**Preflight recommendation**: run the first 1h pass with
+`use_vlm=False` (no Qwen event fusion) to get event counts and
+retrieval quality in ~1–1.5 h wall time, then re-enable Qwen only if
+the event count stays below ~30.
+
+### Known scaling risks (never empirically verified)
+
+1. **Window archive memory.** `WindowEntry.frame` holds an RGB numpy
+   array per window. 3600 windows × ~400 KB/frame ≈ **1.4 GB peak RSS**
+   just for frames, without the embedding cache, Moondream image
+   tensors, or Qwen activations. `MemoryStore` (SQLite, `src/memory_db.py`)
+   exists and persists frames as JPEG blobs; opt-in via the
+   `store=` kwarg. **Enable for 1h runs.**
+2. **Intro-event dominance at stream length.** ARCHITECTURE §15
+   documents that the first event's centroid tends to dominate coarse
+   routing. The fix (multiplicative decay with `tau = 0.50 · stream_span`)
+   was tuned on the 17-min sample_36 run. On a 1h stream, `tau = 30 min`
+   — which means an event from the first 10 min still has
+   decay ≈ `exp(-20/30) ≈ 0.51` when queried at 30 min in. This may or
+   may not be enough; if the intro event still wins routing for
+   mid-stream queries, `tau_fraction` should be lowered for long
+   streams (or made absolute-time rather than span-relative).
+3. **Event tier sparsity.** `event_max_gap=15s` is tight — long-form
+   content with natural scene changes every 30–60 s will produce many
+   short events rather than a few long, meaningful ones. Consider
+   relaxing to 30–60 s for feature-length video.
+4. **Retrieval output size.** At `top_k=5` episodic + grounding
+   windows, the `text_context` string grows with episode summary
+   length, which grows with `episode_max_len`. For a 1h stream with
+   many long episodes, prompt length could push past 2–4k tokens —
+   fine for modern LLMs but worth measuring.
+5. **Florence latency.** Per-window captioning is the dominant fixed
+   cost (~0.5 s × 3600 = 30 min just for window captions). If this
+   becomes the bottleneck, Florence can be disabled for windows that
+   fail the novelty gate — the summary is only required for windows
+   that get promoted to episodic.
+
+### What a 1h run would actually tell us
+
+- **Whether intro-event dominance is linear or catastrophic in stream
+  length.** This is the single biggest open question — the fix in §15
+  works at 17 min; it may or may not survive 60 min.
+- **Whether event-tier consolidation produces useful events at that
+  scale.** 5 events / 17 min is already sparse; 1h could either
+  produce ~15 meaningful events or ~60 useless ones depending on
+  scene structure.
+- **Whether `tau_fraction=0.50` is still the right default.** May need
+  to be tuned per stream length, or made absolute.
+- **Whether the window archive needs SQLite offloading by default.**
+  Currently opt-in; 1h of in-memory frames will likely force the
+  decision.
+
+None of these are show-stoppers for the current design — they are the
+*next* tuning pass, and they need real data before being worth
+tuning at all.

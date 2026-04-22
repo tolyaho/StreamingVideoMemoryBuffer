@@ -27,12 +27,7 @@ class RawWindow:
 
 
 class StreamReader:
-    """converts a video file into a lazy sequence of RawWindows.
-
-    Args:
-        fps: frames per second to sample from the video.
-        window_duration: duration of each output window in seconds.
-    """
+    """converts a video file into a lazy sequence of RawWindows"""
 
     def __init__(
         self,
@@ -47,11 +42,11 @@ class StreamReader:
         import cv2
 
         if not os.path.exists(video_path):
-            raise FileNotFoundError(f"Video not found: {video_path}")
+            raise FileNotFoundError(f"video not found: {video_path}")
 
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
-            raise RuntimeError(f"Cannot open video: {video_path}")
+            raise RuntimeError(f"cannot open video: {video_path}")
 
         video_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         frame_step = max(1, int(round(video_fps / self.fps)))

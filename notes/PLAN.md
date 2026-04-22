@@ -4,6 +4,98 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 
 ---
 
+## Status on 2026-04-22 (late — post LLM-integration cell)
+
+**Implementation (src/)**: complete. All nine modules in `src/__init__.py`
+are wired up, tested (4 test files under `tests/`), and exercised
+end-to-end by `scripts/main.py`. The 3-min soccer clip (`sample_1`) has
+been streamed through the full stack with Florence + Moondream +
+Qwen2.5-VL all active, producing 63 windows · 16 episodes · 5 events in
+82 s (see cell 10 / first streaming demo in the notebook). Persistence
+to `memory.db` is working and the offline QA harness
+(`outputs/retrievals.md`, `EVALUATION_REPORT.md`) reports 5/5 right-time
+retrieval on sample_36.
+
+**Notebook (solution.ipynb)**: 6 sections (§0 Setup → §5 LLM input
+integration), plus a stub §6 conclusion heading and References.
+Assignment sections 1 (memory design) and 2 (storage strategy) are
+covered with prose + a working streaming demo on `sample_1` (63
+windows · 16 episodes · 5 events in 82 s). Assignment section 3
+(query-based retrieval) is demonstrated live: §4 Retrieval writeup
+covers query encoding, three-stage coarse-to-fine, multiplicative decay
+with unified span, tier-split visual scoring; a retrieval helpers cell
+wires `HierarchicalRetriever` + `ReasonerInputFormatter.format_text` +
+`fire_due` (which calls `mem.flush_pending()` before each
+`retriever.retrieve(...)`), and the downstream cell fires all 5 QAs from
+`sample_36/qas.json` with full coarse/episodic/grounding evidence
+printed per QA. **Assignment section 4 (LLM input integration) is now
+also demonstrated live**: §5 writeup cells cover the full-VLM option
+space (projector / raw-frames-into-VLM / Q-Former) and explicitly state
+why this notebook ships the text-context path only, then the final
+code cell calls `format_for_llm(result, query_embedding=q_emb)` on the
+first sample_36 QA, prints the visual-context slot per hit, and prints
+the exact string (system + evidence + user) that would be fed to the
+LLM — the `[evidence]` block is the real `llm_input['text_context']`,
+interpolated directly (not a placeholder).
+
+**Remaining work to close the loop — two short cells + optional long-video run:**
+1. A **baseline cell**: same 5 sample_36 QAs run through
+   `RecentWindowBaseline.retrieve(...)`, printed side-by-side with the
+   hierarchical result; one sentence per query on which one won and
+   why. (`RecentWindowBaseline` exists in `baseline.py` but is still
+   not imported anywhere in the notebook.)
+2. **Section 6 is a stub** (`## 6.` heading with no body) — needs the
+   trade-offs / limitations markdown cell. ARCHITECTURE §15 + the
+   EVALUATION_REPORT residuals have all the material; a 3–5-sentence
+   summary pointing at them is enough.
+3. **Long-video sanity test (1h+)** — the assignment suggests "e.g.
+   1h+" as an example video length. Longest tested: `sample_36` at
+   17 min. Architecture is bounded by construction (recent deque=20,
+   episodic list=50, events slow-growing, no O(N²) retrieval), but
+   scaling has never been empirically verified on hour-long footage.
+   Expected wall time: ~3–4 h on CUDA with all three VLMs active
+   (Florence ~1200 calls + Moondream ~100–200 + Qwen ~10–30). Biggest
+   unknown: whether the documented intro-event dominance failure
+   (ARCHITECTURE §15) scales linearly or exponentially with stream
+   length. See `### Long-video run — preflight checklist` below.
+
+Stretch (not required for the core deliverable): tier-size-over-time
+plot, inline thumbnails of retrieved frames, a keyword-in-caption P@k
+scorer against `qas.json`.
+
+### Long-video run — preflight checklist
+
+Keep this local to `solution.ipynb` — do not touch `scripts/main.py`.
+
+- [ ] Pick one 1h+ clip (StreamingBench has nothing that long; pull from
+      YouTube / local file and drop into `data/`)
+- [ ] Before the stream loop: log `mem.stats()` + wall-clock every N
+      windows (e.g. every 50) so tier growth is observable during the
+      run, not just at the end
+- [ ] Disable Qwen2.5-VL event fusion for the first pass (`use_vlm=False`)
+      so you get event counts and retrieval quality without paying
+      the ~3 h VLM cost
+- [ ] Re-enable Qwen only if event count stays reasonable (< ~30 for
+      1 h); cap `max_new_tokens` lower if needed
+- [ ] Expected failure to watch for: intro-event dominance — if the
+      first event's embedding wins coarse routing for queries about
+      content 40+ min later, the multiplicative-decay τ may need a
+      harder cap (currently `0.50 · stream_span` → 30 min τ on a 1 h
+      stream, which is very permissive)
+- [ ] Expected second failure: event tier grows without meaningful
+      consolidation because `event_max_gap=15s` is tight → episodes
+      flush into many short events. Consider relaxing to 30–60 s for
+      long-form content
+- [ ] Capture peak RSS — the window archive (`WindowEntry.frame`) is
+      not bounded; 3600 windows × ~200 KB JPEG-equivalent ≈ 700 MB in
+      memory if frames are not offloaded to disk. `MemoryStore` (SQLite)
+      exists but is opt-in; consider enabling for the long run
+- [ ] Run 3–5 text queries at the end over the populated memory and
+      log whether coarse routing returns events from the right
+      *section* of the hour, not just the dominant intro event
+
+---
+
 ## SCOPE LOCK (do not cross these lines)
 
 - [x] Do not train any model
@@ -111,6 +203,9 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 - [x] Recent hits + archive windows merged and deduplicated into grounded_windows
 - [x] _blended_score() with weight renormalisation when summary_embedding is None
 - [x] query_summary_embedding optional param for separate summary space
+- [x] **Unified decay span** — single `stream_span` across `recent ∪ episodes ∪ events` passed into all three scoring passes, so straddling entries get `decay=1.0` at every tier and far-end entries compare like-for-like
+- [x] **Tier-split visual scoring** — events: `max_{w ∈ reps(e)} cos(q_vis, w_vis)` (peak over `representative_window_ids`, undoes centroid-of-centroids blur); episodes: stored self-centrality-pooled centroid (pooling already peaks toward the typical frame); recent windows: own embedding directly
+- [x] `_build_rep_index(memory, events)` — one archive lookup per `retrieve()` call, amortised across passes; `_vectors_for()` falls back to `[entry.visual_embedding]` when reps are absent
 
 ### Formatter (formatter.py)
 - [x] format_text(): human-readable evidence block (timestamps + scores + summaries)
@@ -159,68 +254,79 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 - [x] Download StreamingBench sample (sample_1 present at data/)
 - [x] Verify at least one video loads correctly with StreamReader
 - [x] Verify 1 fps sampling produces reasonable windows on real video
-- [ ] Pick 1-3 representative videos for notebook demo (aim for 20-60 min each)
-- [ ] Prepare 5-8 example queries matched to video content
+- [x] Notebook demo locked on `sample_1` (≈3 min soccer clip) — long enough to produce events, short enough to rerun cheaply
+- [ ] Prepare 3–5 example queries matched to `sample_1` content for the retrieval cell (e.g. "when does someone score?", "show the crowd", "what is the scoreboard showing at the end?")
 
 ---
 
 ## NOTEBOOK (solution.ipynb)
 
-### Structure — sections needed
-- [x] Title + architecture overview (approach rationale + architecture writeup)
-- [x] Architecture diagram (architecture.svg referenced in notebook)
-- [ ] Setup cell (imports, path, config flags)
-- [ ] Data structures section with rationale
-- [ ] Perception encoder section with rationale
-- [ ] Stream ingestion section with rationale + synthetic demo
-- [ ] Memory buffer design section with rationale
-- [ ] Streaming update loop (synthetic)
-- [ ] Memory tier size visualisation over time
-- [ ] Baseline section with rationale
-- [ ] Retrieval section with rationale
-- [ ] Retrieval timeline visualisation per query
-- [ ] LLM input formatter section with rationale
-- [ ] Full pipeline demo (synthetic)
-- [ ] Precision@k evaluation (synthetic)
-- [ ] Baseline vs hierarchical comparison table
-- [ ] Memory snapshot visualisation
-- [ ] Design trade-offs discussion (markdown)
+Actual state snapshot (read on 2026-04-22 from `notebooks/solution.ipynb`,
+**39 cells**. Sample_1 soccer streaming demo: 63 windows · 16 episodes ·
+5 events · 82 s in cell 27. Sample_36 cooking retrieval demo: all 5 QAs
+fired via `HierarchicalRetriever` + `ReasonerInputFormatter.format_text`
+in cell 36 — executed output present, ~61 KB, covers coarse / episodic /
+grounding hits per QA).
 
-### Still needed in notebook
-- [ ] Run full pipeline with real video (swap USE_REAL_CLIP=True, VIDEO_PATH=...)
-- [ ] Show actual sampled frames from real video with timestamps
-- [ ] Show real concatenated Moondream episode summaries (with `[t=Xs | frame i/N]` tags)
-- [ ] Show a Qwen2.5-VL event summary paragraph next to its source episode texts and sampled frames
-- [ ] Show real X-CLIP similarity scores on real queries
-- [ ] Example queries on real video content with retrieved thumbnails displayed
-- [ ] Side-by-side: baseline retrieval vs hierarchical retrieval on same query
-- [ ] Note obvious failure cases from real video (including the documented residual event-tier issues)
+### Structure — sections needed
+- [x] Title + architecture overview (approach rationale + architecture writeup) — cells 0–7
+- [x] Architecture diagram — cells 7 (`architecture.svg`) + 15 (`MemoryBuffer.svg`)
+- [x] Setup cell (imports, path, config flags) — cells 8–10 (pip install, sys.path fix)
+- [x] Stream ingestion section with rationale — cells 11–12 (prose only; `StreamReader` is imported but never called standalone)
+- [x] Perception encoder section with rationale — cells 13–14 (prose only; `PerceptionEncoder` imported but never shown encoding on its own)
+- [x] Data structures section with rationale — folded into the Memory Buffer section (cell 15)
+- [x] Memory buffer design section with rationale — cells 15–19 (what is stored, size control, novelty gate, self-centrality pooling with full math, summary gradient, motivation)
+- [x] Streaming update loop on real video — cell 27 (end-to-end Florence + Moondream + Qwen2.5-VL, 63 windows, 16 episodes, 5 events in 82 s)
+- [x] Real concatenated Moondream episode summaries visible in cell 27 output
+- [x] Real Qwen2.5-VL event summaries visible in cell 27 output (5 event boxes rendered)
+- [x] **Retrieval section with rationale + example queries** (cell 29 §4 writeup incl. query encoding, three-stage coarse-to-fine, multiplicative decay, unified span, tier-split visual scoring; cells 31–36 embed `sample_36` video, wire the retriever, and fire all 5 QAs at their QA timestamps via `fire_due(...)`)
+- [x] Retrieval evidence printed inline per QA — coarse events + episodic hits + grounded windows with sim scores, via `ReasonerInputFormatter.format_text(result)` wrapped by `wrap_formatted` for readable line-width
+- [ ] **Baseline section with rationale + retrieve() demo** (`RecentWindowBaseline` is not imported or used anywhere in the notebook)
+- [ ] **Baseline vs hierarchical side-by-side comparison on the same query**
+- [x] **LLM input formatter section with rationale + `format_for_llm` demo** — §5 writeup covers the full-VLM option space (projector / raw-frames-into-VLM / Q-Former) and states why only the text-context path is shipped; the final code cell calls `format_for_llm(result, query_embedding=q_emb)` on the first sample_36 QA, prints the visual-context slot per hit, and prints the exact prompt (system + `[evidence] = llm_input['text_context']` + user) fed to the LLM
+- [ ] Retrieval timeline / thumbnail visualisation per query (stretch)
+- [ ] Memory tier size plot over time (stretch)
+- [ ] Precision@k on the loaded video's QAs (stretch — `qas.json` is on disk; `scripts/main.py` already has the harness)
+- [ ] Design trade-offs / limitations discussion (lightweight markdown cell pointing at ARCHITECTURE §15 residuals is enough)
 - [ ] Final conclusion section answering the assignment questions explicitly
 
+### Still needed in notebook
+- [x] Real-video pipeline run (sample_1 soccer, cell 27) with Florence + Moondream + Qwen2.5-VL all active
+- [x] Florence window captions visible inline
+- [x] Moondream episode summaries visible inline
+- [x] Qwen2.5-VL event summary paragraphs visible inline
+- [x] Sample_36 cooking video embedded (cell 31, HTML5 `<video>` with controls) so graders can watch alongside the retrieval output
+- [x] `HierarchicalRetriever.retrieve(...)` wired in (cell 36) and fired at every QA timestamp during the streaming loop (`fire_due(...)` from cell 33 calls `mem.flush_pending()` before each retrieval so boundary episodes are visible); all 5 QAs from `sample_36/qas.json` printed with coarse / episodic / grounding evidence via `ReasonerInputFormatter.format_text`
+- [ ] Display actual sampled frames from the real video with timestamps (matplotlib grid — easy addition)
+- [ ] Run the same queries against `RecentWindowBaseline.retrieve(...)` and print both side-by-side; state where hierarchical wins and where recent-only is already enough
+- [x] Show `ReasonerInputFormatter.format_for_llm(result, query_embedding=...)` output for one query (dict with `visual_context`/`text_context`) to demonstrate the LLM integration — shipped in §5
+- [ ] Note obvious failure cases (intro-event domination, named-entity hallucinations, colour captions) referencing ARCHITECTURE §15 + EVALUATION_REPORT
+- [ ] Run on a 1h+ video once the §6 conclusion + baseline cell land — see preflight checklist in the Status section
+
 ### Assignment questions the notebook must answer
-- [ ] What is stored in memory?
-- [ ] How is memory size controlled?
-- [ ] What stays and what gets removed?
-- [ ] How are summaries generated (window → episode → event)?
-- [ ] How is retrieval done (coarse-to-fine)?
-- [ ] How are summaries used at query time?
-- [ ] How is retrieved memory formatted for LLM input?
-- [ ] When does hierarchical memory help vs recent-window baseline?
-- [ ] What are the main limitations?
+- [x] What is stored in memory? (§3 prose)
+- [x] How is memory size controlled? (§3 prose)
+- [x] What stays and what gets removed? (§3 prose)
+- [x] How are summaries generated (window → episode → event)? (§3 prose)
+- [x] How is retrieval done (coarse-to-fine)? — §4 markdown + live demo on sample_36 (5 QAs)
+- [x] How are summaries used at query time? — §4 explains β·summary_sim term; live output shows summary text alongside each coarse / episodic hit with sim score
+- [x] How is retrieved memory formatted for LLM input? — §5 writeup + `format_for_llm` demo on sample_36 QA 0, prints both the visual-context slot breakdown and the exact prompt (system / [evidence] = real `text_context` / user) fed to the LLM
+- [ ] When does hierarchical memory help vs recent-window baseline? — no comparison cell
+- [ ] What are the main limitations? — §6 heading is a stub, conclusion cell not yet written
 
 ---
 
 ## EVALUATION
 
 - [x] Evaluation style decided: qualitative + precision@k + baseline comparison
-- [ ] Precision@k on synthetic stream (known ground-truth scene assignments)
-- [ ] Baseline comparison table (earliest hit, hit count)
-- [ ] Memory tier size plots over time
-- [ ] Qualitative retrieval inspection on real video
-- [ ] Side-by-side baseline vs hierarchical on real queries
-- [ ] Note where recent-window is already enough
-- [ ] Note where hierarchical memory clearly helps (queries about old content)
-- [ ] Note where Florence-2 captions improve reranking vs visual-only
+- [x] Qualitative retrieval inspection done **offline** via `scripts/main.py` + `outputs/retrievals.md` + `notes/EVALUATION_REPORT.md` (5/5 right-time retrieval on cooking sample_36, 3/5 verbatim caption match) — but this exists only as markdown, not as notebook output
+- [ ] Move at least a trimmed version of the eval into `solution.ipynb` so the graders see it without opening the markdown notes
+- [ ] Precision@k on `qas.json` for the demo video (keyword-in-caption scorer — ~20 lines)
+- [ ] Baseline vs hierarchical comparison table for the same 3–5 queries (earliest hit time, hit count)
+- [ ] Memory tier size plot over time (`len(recent)` / `len(episodic)` / `len(long_term)` sampled every N windows during cell 27's loop)
+- [ ] Note where recent-window is already enough (a "right now" query)
+- [ ] Note where hierarchical memory clearly helps (a query about content that has already rolled out of the recent queue)
+- [ ] Note where Florence-2 captions improve reranking vs visual-only (ablation is optional, but a one-sentence statement is mandatory for the trade-offs cell)
 
 ---
 
@@ -277,6 +383,10 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 | Neighbour radius | 1 |
 | Scoring formula | `score = (α · visual_sim + β · summary_sim) · exp(-dt / τ)` — multiplicative temporal prior |
 | Scoring weights | α=0.70 visual, β=0.30 summary (α + β = 1.00); `τ = 0.50 · stream_span` |
+| Decay span | unified across `recent ∪ episodes ∪ events` (one ruler for all tiers) |
+| Event visual_sim | `max` over `representative_window_ids` embeddings (peak-over-reps, undoes centroid-of-centroids blur) |
+| Episode visual_sim | pooled centroid (self-centrality pooling already peaks toward typical frame) |
+| Window visual_sim | own embedding (no pooling) |
 | Baseline window | 10 windows |
 | Novelty threshold | 0.05 (real video; 0.25 default) |
 | **VLM dtype** | bf16 (fp16 overflows Qwen vision tower → `!!!!…`) |

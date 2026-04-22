@@ -28,6 +28,7 @@ Your solution should address the following aspects.
 Design a data structure and logic for the Memory Buffer. The design should consider:
 
 - Continuous arrival of video frames
+
 - Limited memory capacity
 - The need to preserve useful context over time
 
