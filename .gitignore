@@ -64,7 +64,12 @@ huggingface/
 .claude/
 
 # Local datasets / videos (too large for GitHub; use scripts/download_video_sample.py)
-/data/
+# Keep only qas.json / qas.jsonl annotations; ignore videos and any other blobs.
+/data/**
+!/data/
+!/data/**/
+!/data/**/qas.json
+!/data/**/qas.jsonl
 
 # Logs
 *.log

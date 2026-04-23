@@ -4,6 +4,106 @@ Legend: [x] done · [ ] to do · [~] partial / needs update
 
 ---
 
+## Status on 2026-04-23 (late — post-run review, pre-submission)
+
+**Submission readiness check against `ASSIGNMENT.md`**:
+
+| Deliverable                              | State | Where                                                                             |
+| ---------------------------------------- | ----- | --------------------------------------------------------------------------------- |
+| Jupyter notebook implementation          | ✅    | `notebooks/solution.ipynb` (§0 Setup → §9 Conclusion, Florence+Moondream+Qwen2.5-VL active) |
+| §1 Memory Buffer design rationale (md)   | ✅    | Notebook §3 + `ARCHITECTURE.md`                                                   |
+| §2 Storage strategy rationale (md)       | ✅    | Notebook §3 + streaming demo on sample_1 (63W/16E/5Ev in 82 s)                    |
+| §3 Query-based retrieval (code + md)     | ✅    | Notebook §4 + live 5-QA demo on sample_36 via `HierarchicalRetriever`             |
+| §4 LLM input integration (code + md)     | ✅    | Notebook §5 (`format_for_llm` demo) + §6 end-to-end MCQ via Qwen2.5-3B-Instruct   |
+| Retrieval with a short query set         | ✅    | 5 QAs on sample_36 (§6), 22 QAs on LVBench 84 min clip (§8)                       |
+| 1 h+ video example                       | ✅    | LVBench `16Z-XQh9jhk` 83.7 min, 22 QAs, 8/22 (36.4 %)                             |
+| Baseline comparison                      | ✅    | `RecentWindowBaseline` §7 on sample_36 (2/5 baseline vs 3/5 hierarchical)         |
+| Smaller-model preference                 | ✅    | X-CLIP ViT-B/32 · Florence-2-base · Moondream2 · Qwen2.5-VL-3B · Qwen2.5-3B LLM   |
+| §9 Conclusion cell                       | ❌    | Empty heading in the notebook — needs 1 short markdown cell wrapping the whole solution |
+| Top-to-bottom restart-kernel dry run     | ❌    | Not done yet; §8 alone is ~3-4 h wall time, so the final pass should skip §8 execution or rely on stored outputs |
+
+**Verdict: submission is ~90 % there.** Everything the assignment explicitly
+asks for is implemented, demoed live, and discussed in prose in the notebook
+itself. The only real missing piece is the §9 **Conclusion** markdown cell
+(design trade-offs + honest limitations + pointer to the per-section
+rationales that are already in the notebook). After that, a cosmetic
+polish pass — consistent section titles, a short caveat above §8 that its
+outputs were produced by a multi-hour run and are not re-executed on a
+kernel restart — and it is ready to hand in.
+
+**Optional, nice-to-have (not blocking submission)**:
+- `RecentWindowBaseline` pass over the 22 LVBench QAs so §8 carries a real
+  head-to-head delta (not just sample_36's 3/5 vs 2/5)
+- Tier-size-over-time plot for either video
+- Display of 4-8 actual sampled frames with timestamps somewhere early
+  in the notebook (matplotlib grid, ~10 lines)
+
+---
+
+## Status on 2026-04-23 (post §8 long-video run on LVBench `16Z-XQh9jhk`)
+
+**Long-video run complete.** §8 streamed the full 83.7-min Katy Perry
+OnePlus Music Festival concert from LVBench (`data/lvbench/16Z-XQh9jhk/`,
+renamed to `video.mp4`, `ffprobe` duration 5023.9 s) end-to-end with
+Florence + Moondream + Qwen2.5-VL all active, same `SummaryBuilder`
+instance used for sample_1 / sample_36, and no hyperparameter overrides
+(defaults: RC=20, EC=10, NT=0.05, EG=4 s, VG=15 s). Memory after run:
+recent 20 (at cap) · episodic 10 (at cap) · events **519** · pending 1 ·
+1,597 promotions · 1,071 episodes flushed · 519 consolidations ·
+58 discards. Persistence: `outputs/memory_16Z-XQh9jhk.db`.
+
+**QA harness on the long video**: 22 LVBench QAs spanning 00:00:20 →
+01:07:43 fired via `fire_due(...)` with `mem.flush_pending()` before
+each retrieval. Reasoner is the same Qwen2.5-3B-Instruct text-only
+MCQ head from §6, identical prompt shape. **Final accuracy: 8/22
+(36.4%)** — correct on QAs 1, 2, 9, 11, 15, 16, 20, 22; wrong on the
+other 14. No head-to-head baseline was run on the long video (baseline
+numbers remain §7's sample_36: 2/5 vs hierarchical 3/5).
+
+**Failure pattern on sample_36 cooking clip (§6–§7)** unchanged:
+hierarchical 3/5, baseline 2/5. The one flipped QA is the held-object
+question where the referenced item had rolled out of the recent deque
+but survived as an episode summary — the exact scenario the
+hierarchical design targets.
+
+**Observed long-video failure modes** (see the diagnosis section below,
+added 2026-04-23):
+- Fine-grained visual attributes dominate the wrong set — hair style,
+  earring colour, exact dancer count, costume colour — these are
+  *caption-bottlenecked*, not retrieval-bottlenecked. Moondream's
+  anti-hallucination prompt explicitly forbids naming brands and
+  speculating, and Florence `<CAPTION>` is a one-line gist; neither
+  tier reliably encodes "green earrings at 00:17".
+- Event tier saturated to **519 events** on an 83.7-min stream
+  — one event every ~9.7 s. `event_max_gap=15 s` is too tight for
+  concert footage: every stage/lighting/costume change triggers a
+  flush. The preflight checklist already flagged this; the parameter
+  was not relaxed before the run.
+- Episodic tier sits at capacity (EC=10) so the LRU-ish write path is
+  constantly evicting — by minute 67 the in-memory episodic list only
+  holds the most recent ~10 episodes; earlier content is reachable
+  only via the event tier, where per-event summaries are a condensed
+  Qwen paragraph rather than concatenated Moondream captions.
+- Retrieval scores on the long video include hits with `sim=0.148`
+  (e.g. QA 8) — the reasoner is being handed near-noise evidence and
+  then guessing, which is how `prediction: D. Write` (QA 14) appears
+  in the output.
+- Temporal decay `τ = 0.50 · stream_span` is ~41.9 min on this clip;
+  permissive by design, but combined with a 519-event coarse pool it
+  means coarse routing returns content from the wrong half-hour of
+  the show more often than not on mid/late-video QAs.
+
+**Remaining work — tuning + writeup**:
+1. Relax `event_max_gap` to 30–60 s and `event_min_sim` to ~0.45 for
+   the long-video rerun; expected event count < 150
+2. Re-run the 22 LVBench QAs with tightened `τ` (e.g. `0.25 · stream_span`)
+   to see if coarse routing localises to the correct chunk of the show
+3. Add a `RecentWindowBaseline` pass over the same 22 QAs so §8
+   carries a real baseline delta (not just sample_36's)
+4. Tighten the answer writeup in `notes/answer.md` to cover §8
+
+---
+
 ## Status on 2026-04-22 (late — post §6 Reasoner + §7 Baseline cells)
 
 **Implementation (src/)**: complete. All nine modules in `src/__init__.py`
@@ -72,36 +172,32 @@ Stretch (not required for the core deliverable): tier-size-over-time
 plot, inline thumbnails of retrieved frames, a keyword-in-caption P@k
 scorer against `qas.json`.
 
-### Long-video run — preflight checklist
+### Long-video run — preflight checklist (closed 2026-04-23)
 
 Keep this local to `solution.ipynb` — do not touch `scripts/main.py`.
 
-- [ ] Pick one 1h+ clip (StreamingBench has nothing that long; pull from
-      YouTube / local file and drop into `data/`)
+- [x] Pick one 1h+ clip — LVBench `16Z-XQh9jhk` (Katy Perry OnePlus
+      Music Festival 2019, 83.7 min per `ffprobe` (5023.9 s), 22 QAs,
+      at `data/lvbench/16Z-XQh9jhk/video.mp4`)
 - [ ] Before the stream loop: log `mem.stats()` + wall-clock every N
-      windows (e.g. every 50) so tier growth is observable during the
-      run, not just at the end
-- [ ] Disable Qwen2.5-VL event fusion for the first pass (`use_vlm=False`)
-      so you get event counts and retrieval quality without paying
-      the ~3 h VLM cost
-- [ ] Re-enable Qwen only if event count stays reasonable (< ~30 for
-      1 h); cap `max_new_tokens` lower if needed
-- [ ] Expected failure to watch for: intro-event dominance — if the
-      first event's embedding wins coarse routing for queries about
-      content 40+ min later, the multiplicative-decay τ may need a
-      harder cap (currently `0.50 · stream_span` → 30 min τ on a 1 h
-      stream, which is very permissive)
-- [ ] Expected second failure: event tier grows without meaningful
-      consolidation because `event_max_gap=15s` is tight → episodes
-      flush into many short events. Consider relaxing to 30–60 s for
-      long-form content
-- [ ] Capture peak RSS — the window archive (`WindowEntry.frame`) is
-      not bounded; 3600 windows × ~200 KB JPEG-equivalent ≈ 700 MB in
-      memory if frames are not offloaded to disk. `MemoryStore` (SQLite)
-      exists but is opt-in; consider enabling for the long run
-- [ ] Run 3–5 text queries at the end over the populated memory and
-      log whether coarse routing returns events from the right
-      *section* of the hour, not just the dominant intro event
+      windows — **not added before the run; only final stats captured**
+- [~] Disable Qwen2.5-VL event fusion for the first pass — **skipped**;
+      run went in with `use_vlm=True` and all three captioners active
+- [x] Qwen stayed on; event count **did not** stay reasonable — 519
+      events on 83.7 min (~9.7 s / event), confirming the preflight
+      worry
+- [x] Predicted failure realised — coarse routing misses the correct
+      half-hour on most mid/late-video QAs; τ = ~41.9 min at
+      `0.50 · stream_span` is too permissive against 519 events
+- [x] Predicted failure realised — `event_max_gap=15 s` is far too
+      tight for concert footage; relax to 30–60 s next run (tracked in
+      new Status section above)
+- [ ] Peak RSS not captured — `MemoryStore` (SQLite) *was* enabled, so
+      window frames are on disk (`outputs/memory_16Z-XQh9jhk.db`), but
+      no peak-RSS measurement was taken during the stream
+- [x] 22 end-of-run QA retrievals fired; coarse-routing section
+      accuracy is the dominant wrong-answer class (see diagnosis
+      section above)
 
 ---
 
@@ -310,7 +406,7 @@ grounding hits per QA).
 - [x] Run the same queries against `RecentWindowBaseline.retrieve(...)` and print both side-by-side — §7 cell (MCQ accuracy 2/5 baseline vs 3/5 hierarchical on sample_36)
 - [x] Show `ReasonerInputFormatter.format_for_llm(result, query_embedding=...)` output for one query (dict with `visual_context`/`text_context`) to demonstrate the LLM integration — shipped in §5
 - [ ] Note obvious failure cases (intro-event domination, named-entity hallucinations, colour captions) referencing ARCHITECTURE §15 + EVALUATION_REPORT
-- [ ] Run on a 1h+ video (§8) — pick LVBench / HourVideo / MLVU long subset or a hand-curated OCW lecture; see preflight checklist in the Status section
+- [x] Run on a 1h+ video (§8) — LVBench `16Z-XQh9jhk` (83.7 min) streamed end-to-end; 22 QAs scored 8/22 (36.4%); final memory 20/10/519 (RC/EC/events); see 2026-04-23 Status section for diagnosis
 
 ### Assignment questions the notebook must answer
 - [x] What is stored in memory? (§3 prose)
@@ -329,6 +425,8 @@ grounding hits per QA).
 
 - [x] Evaluation style decided: qualitative + precision@k + baseline comparison
 - [x] Qualitative retrieval inspection done **offline** via `scripts/main.py` + `outputs/retrievals.md` + `notes/EVALUATION_REPORT.md` (5/5 right-time retrieval on cooking sample_36, 3/5 verbatim caption match) — but this exists only as markdown, not as notebook output
+- [x] **Long-video MCQ eval (§8)**: 22 LVBench QAs on `16Z-XQh9jhk` (83.7 min) — **8/22 (36.4%)** with hierarchical memory + Qwen2.5-3B-Instruct reasoner; no baseline pass on this clip yet
+- [ ] Long-video baseline pass: run `RecentWindowBaseline` over the same 22 LVBench QAs so §8 has a real delta (not just sample_36's 3/5 vs 2/5)
 - [ ] Move at least a trimmed version of the eval into `solution.ipynb` so the graders see it without opening the markdown notes
 - [ ] Precision@k on `qas.json` for the demo video (keyword-in-caption scorer — ~20 lines)
 - [ ] Baseline vs hierarchical comparison table for the same 3–5 queries (earliest hit time, hit count)

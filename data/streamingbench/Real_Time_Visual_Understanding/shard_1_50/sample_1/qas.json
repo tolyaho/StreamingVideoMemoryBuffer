@@ -1,0 +1,71 @@
+{
+  "sample_id": 1,
+  "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_1/video.mp4",
+  "qas": [
+    {
+      "question_id": "Real-Time Visual Understanding_sample_1_1",
+      "task_type": "Object Perception",
+      "question": "What logos are visible in the background as players and referees walk towards the center of the football field?",
+      "time_stamp": "00:00:04",
+      "answer": "D",
+      "options": [
+        "A. FIFA and La Liga.",
+        "B. UEFA and La Liga.",
+        "C. Bundesliga and La Liga.",
+        "D. Aeromexico and La Liga."
+      ]
+    },
+    {
+      "question_id": "Real-Time Visual Understanding_sample_1_2",
+      "task_type": "Causal Reasoning",
+      "question": "Why does the player wearing the number nine red and blue jersey celebrate?",
+      "time_stamp": "00:00:53",
+      "answer": "C",
+      "options": [
+        "A. He saved a goal.",
+        "B. He received a pass.",
+        "C. He scored a goal.",
+        "D. He won a free kick."
+      ]
+    },
+    {
+      "question_id": "Real-Time Visual Understanding_sample_1_3",
+      "task_type": "Text-Rich Understanding",
+      "question": "What logo is seen on the jersey of the player covering his mouth?",
+      "time_stamp": "00:01:22",
+      "answer": "D",
+      "options": [
+        "A. Apple.",
+        "B. Google.",
+        "C. Adidas.",
+        "D. Spotify."
+      ]
+    },
+    {
+      "question_id": "Real-Time Visual Understanding_sample_1_4",
+      "task_type": "Attribute Perception",
+      "question": "What color is the goalie's uniform?",
+      "time_stamp": "00:01:20",
+      "answer": "D",
+      "options": [
+        "A. Blue.",
+        "B. Red.",
+        "C. White.",
+        "D. Yellow."
+      ]
+    },
+    {
+      "question_id": "Real-Time Visual Understanding_sample_1_5",
+      "task_type": "Attribute Perception",
+      "question": "What is the color of the cooler labeled \"PRIME\" near the team bench?",
+      "time_stamp": "00:02:08",
+      "answer": "D",
+      "options": [
+        "A. Blue.",
+        "B. Yellow.",
+        "C. Green.",
+        "D. Red."
+      ]
+    }
+  ]
+}
