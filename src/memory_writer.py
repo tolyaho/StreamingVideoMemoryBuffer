@@ -27,31 +27,7 @@ def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
 
 
 class HierarchicalMemoryWriter:
-    """maintains three memory tiers and updates them on each incoming window.
-
-    Args:
-        recent_capacity: max WindowEntries in recent memory.
-        episodic_capacity: max EpisodeEntries before consolidation is triggered.
-        novelty_threshold: min cosine distance (1 - sim) to promote a window.
-        episode_max_gap: max seconds between window end and next window start
-            to merge into one episode (smaller = stricter / shorter episodes).
-        episode_min_sim: min cosine sim to the episode centroid to keep merging.
-        episode_max_len: hard cap on windows per episode. None = no cap.
-        event_max_gap: max seconds between episodes to cluster into one event
-            (smaller = stricter / more events).
-        event_min_episode_sim: min cosine sim to the running event centroid.
-        episodic_merge_batch: max episodes merged into one EventEntry.
-        sigma_center: std dev (seconds) of the temporal centrality Gaussian for episode pooling.
-        sigma_time: time-decay constant (seconds) for the local consistency kernel.
-        lambda_center: weight of temporal centrality term in self-centrality score.
-        mu_consistency: weight of local consistency term in self-centrality score.
-        n_rep_windows: number of top-weight windows to keep as episode representatives.
-        summary_fn: callable that summarizes memory entries. It is called as
-            ``summary_fn(entries)`` for episodes and may also be called as
-            ``summary_fn(entries, episode_frames=episode_frames)`` for events.
-            Falls back to time templates if None.
-        text_encode_fn: (text: str) -> np.ndarray. encodes summaries for retrieval.
-    """
+    """maintains three memory tiers and updates them on each incoming window."""
 
     def __init__(
         self,
@@ -112,7 +88,7 @@ class HierarchicalMemoryWriter:
             try:
                 self._store.save_window(window)
             except Exception as exc:
-                print(f"[MemoryWriter] DB save_window failed: {exc!r}")
+                print(f"[MemoryWriter] save_window failed ({type(exc).__name__}).")
 
         if len(self.recent) > self.recent_capacity:
             evicted = self.recent.popleft()
@@ -124,7 +100,7 @@ class HierarchicalMemoryWriter:
                     try:
                         self._store.save_window(evicted)
                     except Exception as exc:
-                        print(f"[MemoryWriter] DB tier update failed: {exc!r}")
+                        print(f"[MemoryWriter] tier update failed ({type(exc).__name__}).")
             else:
                 self._n_discarded += 1
 
@@ -143,7 +119,7 @@ class HierarchicalMemoryWriter:
                     try:
                         self._store.save_window(evicted)
                     except Exception as exc:
-                        print(f"[MemoryWriter] DB tier update failed: {exc!r}")
+                        print(f"[MemoryWriter] tier update failed ({type(exc).__name__}).")
             else:
                 self._n_discarded += 1
 
@@ -287,7 +263,7 @@ class HierarchicalMemoryWriter:
             try:
                 self._store.save_episode(episode)
             except Exception as exc:
-                print(f"[MemoryWriter] DB save_episode failed: {exc!r}")
+                print(f"[MemoryWriter] save_episode failed ({type(exc).__name__}).")
 
     def _snapshot_current_episode(self) -> Optional[EpisodeEntry]:
         if not self._pending_episode:
@@ -459,7 +435,7 @@ class HierarchicalMemoryWriter:
             try:
                 self._store.save_event(event)
             except Exception as exc:
-                print(f"[MemoryWriter] DB save_event failed: {exc!r}")
+                print(f"[MemoryWriter] save_event failed ({type(exc).__name__}).")
 
     @staticmethod
     def _default_event_summary(episodes: List[EpisodeEntry]) -> str:
@@ -474,5 +450,5 @@ class HierarchicalMemoryWriter:
         try:
             return self._text_encode_fn(text)
         except Exception as exc:
-            print(f"[MemoryWriter] summary embedding failed: {exc!r}")
+            print(f"[MemoryWriter] summary embedding failed ({type(exc).__name__}).")
             return None

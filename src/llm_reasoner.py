@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
+from .prompts import REASONER_SYSTEM_PROMPT, build_reasoner_user_block
 from .summary_builder import (
     _default_torch_device,
     _suppress_generate_warnings,
@@ -9,23 +10,7 @@ from .summary_builder import (
 )
 
 
-SYSTEM_PROMPT = (
-    "You are answering a question about a video.\n"
-    "Use the evidence below. Each line includes a time range.\n"
-    "When you answer, mention the time ranges you relied on."
-)
-
-
-def _user_block(llm_input: dict, options: Optional[Sequence[str]]) -> str:
-    head = f"Evidence:\n{llm_input['text_context']}\n\nQuestion: {llm_input['query']}"
-    if not options:
-        return head
-    return (
-        f"{head}\n"
-        f"Options:\n" + "\n".join(options) + "\n"
-        "Answer with the single letter (A, B, C, or D) of the best option, "
-        "followed by a one-sentence justification that cites the time range(s) you used."
-    )
+SYSTEM_PROMPT = REASONER_SYSTEM_PROMPT
 
 
 def build_prompt(
@@ -34,7 +19,7 @@ def build_prompt(
     options: Optional[Sequence[str]] = None,
     system: str = SYSTEM_PROMPT,
 ) -> str:
-    return f"[system] {system}\n\n[user]\n{_user_block(llm_input, options)}"
+    return f"[system] {system}\n\n[user]\n{build_reasoner_user_block(llm_input, options)}"
 
 
 class LLMReasoner:
@@ -76,7 +61,7 @@ class LLMReasoner:
 
         messages = [
             {"role": "system", "content": system},
-            {"role": "user", "content": _user_block(llm_input, options)},
+            {"role": "user", "content": build_reasoner_user_block(llm_input, options)},
         ]
         text = self._tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
