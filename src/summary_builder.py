@@ -1,14 +1,5 @@
-"""generates text summaries at window, episode, and event granularity.
-
-Three models, chosen by tier (all optional; each can be toggled independently):
-  window (ingest)      — Florence-2 <CAPTION> on the representative frame (`use_model`)
-  episode (flush)      — Moondream2 per-member-frame grounded caption with
-                         anti-hallucination prompt (`use_moondream`); falls back to
-                         Florence <DETAILED_CAPTION> only if Moondream is disabled
-  event (consolidation) — Qwen2.5-VL (default 3B) multi-image fusion over episode
-                         texts + sampled frames (`use_vlm`)
-When none are enabled, every tier falls through to a time-template string.
-"""
+"""Text summaries per tier: Florence-2 on windows, Moondream2 on episodes, Qwen2.5-VL on events.
+Every tier is optional and falls back to a time-template when its model is off."""
 from __future__ import annotations
 
 import types
@@ -17,6 +8,8 @@ from contextlib import contextmanager
 from typing import List, Optional
 
 import numpy as np
+
+from .prompts import MOONDREAM_FRAME_PROMPT, build_event_vlm_prompt
 
 
 def _default_torch_device(passed: Optional[str]) -> str:
@@ -36,26 +29,19 @@ def _dtype_for_device(device: str):
 
     if device in ("cuda", "mps"):
         return torch.float16
-    return torch.bfloat16  # halves CPU memory vs float32; supported on modern CPUs
+    return torch.bfloat16
 
 
 def _vlm_dtype_for_device(device: str):
-    """Qwen2-VL / Qwen2.5-VL must run in bf16: fp16 overflows in the vision tower and
-    the model generates repeated token 0 (rendered as ``!``). Fall back to fp16 only if
-    bf16 is unsupported on this hardware."""
     import torch
 
     if device == "cuda":
         return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-    if device == "mps":
-        # MPS bf16 lands in PyTorch 2.1+. Older builds must use fp16 (known-garbage risk).
-        return torch.bfloat16
     return torch.bfloat16
 
 
 def _patch_florence2_generation(model) -> None:
-    """Florence-2 prepare_inputs_for_generation crashes when past_key_values[0][0]
-    is None during the first decoding step. Treat it as no cache."""
+    """Florence-2 crashes on a None first-step KV cache — treat it as no cache."""
     lm = getattr(model, "language_model", None)
     if lm is None:
         return
@@ -72,7 +58,6 @@ def _patch_florence2_generation(model) -> None:
 
 
 def _clear_invalid_early_stopping(model) -> None:
-    """Florence-2's generation_config sets early_stopping=True which HF warns about in greedy mode."""
     for mod in (model, getattr(model, "language_model", None)):
         if mod is None:
             continue
@@ -83,6 +68,7 @@ def _clear_invalid_early_stopping(model) -> None:
 
 @contextmanager
 def _suppress_generate_warnings():
+    """mute the two noisy HF generate warnings."""
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
@@ -98,16 +84,7 @@ def _suppress_generate_warnings():
 
 
 class SummaryBuilder:
-    """Window / episode / event text summaries.
-
-    Args:
-        use_model: load Florence-2 for window captions.
-        use_vlm: load Qwen2-VL or Qwen2.5-VL (default Qwen2.5-VL-3B-Instruct) for event fusion.
-        use_moondream: load Moondream2 for grounded per-frame episode captions.
-        device / vlm_device / moondream_device: torch devices, auto-detected when None;
-            on MPS the secondary models default to CPU to keep both off the unified heap.
-        caption_num_beams: Florence generate beam width (CUDA only; MPS/CPU uses greedy).
-    """
+    """loads the three captioners (all optional) and exposes per-tier summary methods."""
 
     def __init__(
         self,
@@ -161,6 +138,7 @@ class SummaryBuilder:
             self._load_moondream(moondream_model_name, moondream_revision)
 
     def _load_captioner(self, model_name: str, device: Optional[str]) -> None:
+        """Load Florence-2 (window tier), patching its generation quirks."""
         from transformers import AutoModelForCausalLM, AutoProcessor
 
         self.device = _default_torch_device(device or self.device)
@@ -182,23 +160,11 @@ class SummaryBuilder:
             _clear_invalid_early_stopping(self._model)
         print("Captioner ready.")
 
-    def _resolve_vlm_device(self) -> str:
-        if self._vlm_device_arg is not None:
-            return self._vlm_device_arg
-        # Florence + Qwen on the same MPS heap often OOM; CPU for VLM is slower but stable.
-        if self.device == "mps" and self._model is not None:
-            print(
-                "Placing event VLM on CPU (Florence on MPS — both on MPS usually exceeds "
-                "unified memory). Pass vlm_device='mps' to force, or free GPU memory."
-            )
-            return "cpu"
-        return _default_torch_device(self.device)
-
     def _load_vlm(self, model_name: str) -> None:
+        """Load Qwen2-VL / Qwen2.5-VL (event tier) with a capped per-image visual-token budget."""
         import torch
         from transformers import AutoProcessor
 
-        # Qwen2-VL / Qwen2.5-VL call torch.compiler.is_compiling() which was added in PyTorch 2.1
         if not hasattr(torch.compiler, "is_compiling"):
             torch.compiler.is_compiling = lambda: False
 
@@ -212,17 +178,14 @@ class SummaryBuilder:
                 f"Unsupported VLM {model_name!r}; pass a Qwen2-VL-* or Qwen2.5-VL-* Instruct id."
             )
 
-        dev = self._resolve_vlm_device()
+        dev = self._vlm_device_arg or _default_torch_device(self.device)
         dtype = _vlm_dtype_for_device(dev)
         print(f"Loading event VLM {model_name} on {dev} ({dtype})…")
-        # Cap the per-image visual-token budget. Qwen2-VL's default max_pixels ≈ 12.8 M
-        # produces up to ~16k patches per image; eager attention over many frames blows up.
         self._vlm_proc = AutoProcessor.from_pretrained(
             model_name,
             min_pixels=self.vlm_image_min_pixels,
             max_pixels=self.vlm_image_max_pixels,
         )
-        # SDPA avoids materialising the full N×N attention matrix that eager does.
         attn_impl = "sdpa" if dev == "cuda" else "eager"
         self._vlm = (
             VlmCls.from_pretrained(
@@ -235,22 +198,12 @@ class SummaryBuilder:
         )
         print("Event VLM ready.")
 
-    def _resolve_moondream_device(self) -> str:
-        if self._moondream_device_arg is not None:
-            return self._moondream_device_arg
-        if self.device == "mps" and self._model is not None:
-            return "cpu"
-        return _default_torch_device(self.device)
-
     def _load_moondream(self, model_name: str, revision: Optional[str]) -> None:
-        """Moondream2: single-image captioner + VQA. Used for episode-level
-        captions where Florence's <DETAILED_CAPTION> tends to hallucinate
-        named entities (teams, players, scores, seasons) from misread overlays.
-        """
+        """Load Moondream2 (episode tier) — picked over Florence <DETAILED_CAPTION> because it hallucinates names far less."""
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        dev = self._resolve_moondream_device()
-        dtype = _vlm_dtype_for_device(dev)  # Moondream prefers bf16 on CUDA
+        dev = self._moondream_device_arg or _default_torch_device(self.device)
+        dtype = _vlm_dtype_for_device(dev)
         print(f"Loading Moondream {model_name} on {dev} ({dtype})…")
         kwargs = {"trust_remote_code": True, "dtype": dtype}
         if revision:
@@ -263,20 +216,8 @@ class SummaryBuilder:
         self._moondream_device = dev
         print("Moondream ready.")
 
-    _MOONDREAM_PROMPT = (
-        "You are looking at a single still frame extracted from a continuous video, so "
-        "some motion may be frozen mid-action. Describe this frame in 2–4 sentences "
-        "focused only on what is clearly visible, including any apparent motion or pose "
-        "evident from the pixels (body position, blur, trajectory). Do NOT name specific "
-        "people, organizations, locations, events, brands, or on-screen text unless you "
-        "can read or identify them confidently and completely. When identities or text "
-        "are unclear, use neutral generic descriptions instead of guessing. Prefer "
-        "concrete visual detail (colours, clothing, positions, objects, apparent motion) "
-        "over narrative speculation about what happened before or after this frame."
-    )
-
     def caption_frame_moondream(self, frame: np.ndarray) -> str:
-        """Grounded per-frame caption via Moondream2. Flexible across model revisions."""
+        """per-frame Moondream2 caption — tries query / caption / encode+answer depending on the model revision."""
         import torch
         from PIL import Image
 
@@ -286,16 +227,14 @@ class SummaryBuilder:
         pil = Image.fromarray(frame).convert("RGB")
         last_err: Optional[BaseException] = None
         with torch.no_grad(), _suppress_generate_warnings():
-            # Newest revisions: model.query(image, prompt) -> {"answer": str}
             if hasattr(self._moondream, "query"):
                 try:
-                    out = self._moondream.query(pil, self._MOONDREAM_PROMPT)
+                    out = self._moondream.query(pil, MOONDREAM_FRAME_PROMPT)
                     text = out.get("answer") if isinstance(out, dict) else out
                     if text:
                         return str(text).strip()
                 except Exception as exc:
                     last_err = exc
-            # Mid-generation revisions: model.caption(image, length=...) -> {"caption": str}
             if hasattr(self._moondream, "caption"):
                 try:
                     out = self._moondream.caption(pil, length="normal")
@@ -304,23 +243,18 @@ class SummaryBuilder:
                         return str(text).strip()
                 except Exception as exc:
                     last_err = exc
-            # Legacy API: encode_image + answer_question
             if hasattr(self._moondream, "encode_image") and hasattr(self._moondream, "answer_question"):
                 try:
                     enc = self._moondream.encode_image(pil)
                     return str(
                         self._moondream.answer_question(
-                            enc, self._MOONDREAM_PROMPT, self._moondream_tok
+                            enc, MOONDREAM_FRAME_PROMPT, self._moondream_tok
                         )
                     ).strip()
                 except Exception as exc:
                     last_err = exc
         if last_err is not None and not getattr(self, "_moondream_warned", False):
-            print(
-                f"[SummaryBuilder] Moondream call failed ({last_err!r}); falling back to "
-                "Florence for episode captions. If this is a torch<2.5 / enable_gqa issue, "
-                "upgrade torch or pass moondream_revision='2024-08-26'."
-            )
+            print(f"[SummaryBuilder] Moondream failed ({type(last_err).__name__}); using Florence.")
             self._moondream_warned = True
         return ""
 
@@ -330,6 +264,7 @@ class SummaryBuilder:
         task_prompt: Optional[str] = None,
         max_new_tokens: int = 96,
     ) -> str:
+        """single-frame Florence-2 caption, or a placeholder if the model isn't loaded."""
         if not self.use_model or self._model is None:
             return "visual scene"
 
@@ -363,6 +298,7 @@ class SummaryBuilder:
         return str(parsed.get(prompt, "")).strip() or "visual scene"
 
     def build_window_caption(self, raw_window) -> str:
+        """window-tier caption: Florence on the representative frame, time template otherwise."""
         if not self.use_model or self._model is None:
             return self.build_window_note(raw_window.start_time, raw_window.end_time)
         frame = raw_window.representative_frame
@@ -371,11 +307,10 @@ class SummaryBuilder:
         return self.caption_frame(frame)
 
     def caption_episode(self, windows: list, start_time: float, end_time: float) -> str:
+        """episode-tier summary: Moondream per-frame if loaded, Florence fallback, else stitched window notes."""
         if not windows:
             return f"Episode {start_time:.1f}–{end_time:.1f}s"
 
-        # Preferred path: Moondream for episode captions — it hallucinates
-        # far fewer named entities than Florence's <DETAILED_CAPTION>.
         if self._moondream is not None:
             parts: List[str] = []
             total = len(windows)
@@ -391,7 +326,6 @@ class SummaryBuilder:
             body = "\n\n".join(parts)
             return body if len(windows) == 1 else f"Episode {start_time:.1f}–{end_time:.1f}s\n\n{body}"
 
-        # Fallback: Florence (original behaviour).
         if self.use_model and self._model is not None:
             detail_tokens = 256 if self.episode_task_prompt == "<DETAILED_CAPTION>" else 128
             parts = []
@@ -424,6 +358,7 @@ class SummaryBuilder:
         end_time: float,
         episode_time_ranges: Optional[List[tuple]] = None,
     ) -> str:
+        """Event-tier summary: Qwen2.5-VL multi-image fusion, template fallback on failure."""
         if not episode_summaries:
             return f"Event {start_time:.1f}–{end_time:.1f}s"
 
@@ -435,12 +370,13 @@ class SummaryBuilder:
                 if fused:
                     return f"Event {start_time:.1f}–{end_time:.1f}s: {fused}"
             except Exception as exc:
-                print(f"[SummaryBuilder] VLM fusion failed: {exc!r}; using template.")
+                print(f"[SummaryBuilder] VLM fusion failed ({type(exc).__name__}); using template.")
 
         snippets = " → ".join(s.split(":")[0].strip() for s in episode_summaries[:5])
         return f"Event {start_time:.1f}–{end_time:.1f}s: {snippets}"
 
     def build_window_note(self, start_time: float, end_time: float) -> str:
+        """time-only placeholder when no captioner is loaded."""
         return f"Scene at {start_time:.1f}–{end_time:.1f}s"
 
     def __call__(
@@ -448,6 +384,7 @@ class SummaryBuilder:
         entries: list,
         episode_frames: Optional[List[List[np.ndarray]]] = None,
     ) -> str:
+        """dispatch: WindowEntry list -> episode caption; EpisodeEntry list -> event summary."""
         from .data_structures import EpisodeEntry, WindowEntry
 
         if not entries:
@@ -471,6 +408,7 @@ class SummaryBuilder:
         episode_frames: List[List[np.ndarray]],
         episode_time_ranges: Optional[List[tuple]] = None,
     ) -> str:
+        """Run Qwen2.5-VL over subsampled episode frames + bulleted scene texts."""
         import torch
         from PIL import Image
 
@@ -483,7 +421,6 @@ class SummaryBuilder:
         if not all_frames:
             return ""
 
-        # Subsample evenly if we exceed the configured per-event frame cap.
         if len(all_frames) > self.vlm_max_frames:
             step = len(all_frames) / self.vlm_max_frames
             all_frames = [all_frames[int(i * step)] for i in range(self.vlm_max_frames)]
@@ -500,9 +437,6 @@ class SummaryBuilder:
 
         n_frames = len(all_frames)
         n_scenes = len(capped_texts)
-        # Adaptive word target — short for sparse/repetitive events, long only
-        # when there is genuine variety to describe. Prevents the model from
-        # padding with a duplicated closing sentence.
         if n_scenes <= 1:
             target = "roughly **40–80 words**, one short paragraph"
         elif n_scenes <= 3:
@@ -510,7 +444,7 @@ class SummaryBuilder:
         else:
             target = "roughly **120–220 words**, one or two paragraphs"
 
-        prompt = self._build_event_vlm_prompt(
+        prompt = build_event_vlm_prompt(
             bulleted=bulleted,
             n_frames=n_frames,
             n_scenes=n_scenes,
@@ -531,9 +465,6 @@ class SummaryBuilder:
             padding=True,
         ).to(self._vlm.device)
 
-        # Qwen2-VL/Qwen2.5-VL: pixel_values must match model dtype, otherwise the vision
-        # tower returns garbage and the LM emits repeated token 0 ("!!!!!..."). ``.to(device)``
-        # on a BatchFeature does not cast dtype.
         model_dtype = self._vlm.dtype
         for key in ("pixel_values", "pixel_values_videos"):
             if key in inputs and inputs[key].dtype != model_dtype:
@@ -551,84 +482,8 @@ class SummaryBuilder:
 
         return self._decode_vlm_new_text(out, inputs).replace("\n", " ")
 
-    @staticmethod
-    def _build_event_vlm_prompt(
-        *,
-        bulleted: str,
-        n_frames: int,
-        n_scenes: int,
-        target: str,
-    ) -> str:
-        return (
-            "You are producing a detailed summary of a single continuous video event that is made up "
-            "of several shorter scenes.\n\n"
-            "## Output language\n"
-            "Write the entire summary in **English only**. Do **not** switch to Chinese or any other "
-            "language at any point, even if on-screen text, captions, or image content contain "
-            "non-English words. If you need to refer to visible foreign text, describe it in English "
-            "(e.g. 'a sign with Chinese characters') rather than reproducing it.\n\n"
-            "## What you receive\n"
-            f"- **{n_frames} still images**, supplied in chronological order. They are the most "
-            "representative frames sampled from the scenes that make up this event (roughly 1–2 "
-            "frames per scene, evenly spread in time).\n"
-            f"- **{n_scenes} scene descriptions** below, one per scene, each prefixed with its time "
-            "range in seconds from the start of the video. The scenes are listed in chronological "
-            "order and together cover the whole event.\n"
-            "- The images are the **authoritative evidence**. The scene descriptions come from a "
-            "small auto-captioner and are known to **hallucinate named entities** — specific team "
-            "names, player names, scores, dates, seasons, leagues, brand names, and on-screen text. "
-            "Use the captions only for general shape, action, and setting. If a caption names a "
-            "specific team, player, league, match, score, date, or logo that you cannot **clearly "
-            "verify from the images**, do NOT repeat that claim; describe it generically instead "
-            "(e.g. 'a football match', 'a player in a red-and-blue striped jersey', 'a scoreboard').\n\n"
-            "## Your task\n"
-            f"Write a **detailed, cohesive summary** of the event as prose ({target}, no bullet "
-            "lists, no headings, no numbered steps).\n"
-            "Make it **high-information-density**: keep the rich context, but pack each sentence with "
-            "distinct visual facts instead of broad atmosphere or commentary.\n"
-            "Put the most query-useful facts early: who/what is present, where the event happens, the "
-            "main actions, visible objects, and any clear state changes over time.\n"
-            "Then cover, in natural narrative order:\n"
-            "1. **Setting & context** — where the event takes place and any reliable on-screen "
-            "graphics or text.\n"
-            "2. **Subjects & objects** — the main people, animals, vehicles, or objects that appear, "
-            "including recognisable clothing, colours, or distinctive features when visible.\n"
-            "3. **What happens over time** — the key actions and how they unfold; refer to earlier vs. "
-            "later moments only when it clarifies the progression.\n"
-            "4. **Transitions & continuity** — how the focus, location, or activity shifts between "
-            "scenes, and what stays the same.\n"
-            "5. **Overall takeaway** — one short closing sentence naming what the event is about as a "
-            "whole.\n\n"
-            "## Rules\n"
-            "- Stay **strictly grounded**: describe only what the images and scene descriptions "
-            "actually support. If something is ambiguous, say so briefly ('appears to', 'likely') "
-            "rather than inventing a specific identity, name, place, or action.\n"
-            "- Prefer concrete visual detail over generic phrasing.\n"
-            "- Do **not** list the scenes mechanically ('Scene 1 shows..., Scene 2 shows...'); weave "
-            "them into one flowing narrative.\n"
-            "- Do **not** repeat the scene descriptions verbatim; synthesise them.\n"
-            "- **Avoid filler** such as mood, professionalism, intensity, or cinematic commentary "
-            "unless it is directly visible and important for understanding the event.\n"
-            "- If the scenes are visually repetitive or contain little new information, compress them "
-            "briefly instead of restating similar actions.\n"
-            "- The closing takeaway sentence must add a new synthesising observation. Do **not** "
-            "re-describe the last scene or repeat what an earlier sentence already said.\n"
-            "- Each sentence must introduce information not already stated. Avoid near-duplicate "
-            "phrases.\n"
-            "- Return **only** the summary prose — no title, preamble, bullet points, numbering, "
-            "or meta-commentary about the task.\n\n"
-            f"## Scene descriptions\n{bulleted}"
-        )
-
     def _decode_vlm_new_text(self, out, inputs) -> str:
-        """Strip the prompt from generate() output.
-
-        Plain slicing ``out[:, len(prompt):]`` is unreliable for Qwen2-VL / Qwen2.5-VL:
-        multimodal ``input_ids`` do not always align 1:1 with the produced sequence the way
-        text-only models do, and decoding that slice can yield garbage (e.g. repeated ``!``).
-        Hugging Face's image-text pipelines decode full output + prompt, then remove the
-        decoded prompt prefix (see ``ImageTextToTextPipeline.postprocess``).
-        """
+        """Strip the prompt prefix from Qwen-VL output — plain id-slicing is unsafe on multimodal inputs."""
         proc = self._vlm_proc
         skip_special_tokens = True
         clean_up = False
@@ -662,6 +517,7 @@ class SummaryBuilder:
 
     @staticmethod
     def _stitch_episode(notes: List[str], start_time: float, end_time: float) -> str:
+        """Join window notes when no captioner is loaded."""
         if len(notes) == 1:
             return notes[0]
         return f"Episode {start_time:.1f}–{end_time:.1f}s: {'; '.join(notes)}"

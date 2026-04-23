@@ -1,41 +1,4 @@
-"""coarse-to-fine retrieval over the three-tier memory.
-
-stage A: rank EventEntries by semantic score weighted by a multiplicative
-    temporal prior (top-M).
-stage B: rank EpisodeEntries within selected time ranges (top-K). The last
-    ``recent_episodes`` entries of the episodic tier are always added to the
-    candidate pool so tail episodes not yet consolidated into any event remain
-    searchable, mirroring the recent-windows pass.
-stage C: attach nearby WindowEntries from the recent queue for local grounding.
-
-Score = (alpha * visual_sim + beta * summary_sim) * exp(-dt / tau),
-
-where ``dt`` is the temporal distance between ``query_time`` and the entry's
-time range (0 if the entry straddles ``query_time``) and ``tau`` is a fraction
-of a **single unified span** shared across all three tiers — the full time
-range covered by the union of recent windows, episodes and events. Using one
-ruler everywhere keeps the decay comparable across tiers: an event that
-straddles ``query_time`` gets decay=1.0 just like a recent window, instead of
-being penalized by a tier-local span that was always wider than the recent
-queue's. The multiplicative prior still discounts far-in-time entries
-proportionally to their semantic score, so a semantically dominant but
-temporally distant event cannot out-rank a closer one on recency-sensitive
-queries — unlike the additive ``gamma * bonus`` form, which capped the
-temporal contribution and left room for length-bias "centroid" events to win.
-
-``visual_sim`` splits by tier. For events we score the query against each
-``representative_window_ids`` embedding and take the max cosine — event
-centroids are centroids-of-centroids (episode means averaged again), which
-smears peaked semantic content, so peak-over-reps undoes that blur. For
-episodes we keep the pooled centroid: self-centrality pooling already
-weights members by centrality and visual agreement, so the episode vector
-sits on the "typical" frame and doesn't suffer the same 2-stage-averaging
-blur that events do. Recent windows use their own embedding directly.
-
-When ``summary_embedding`` is None, the visual term takes full semantic
-weight. When ``query_time`` is None, the decay collapses to 1.0 (pure
-semantic ranking).
-"""
+"""coarse-to-fine retrieval over the three-tier memory"""
 from __future__ import annotations
 
 from typing import List, Optional, Tuple
@@ -47,19 +10,6 @@ from .memory_writer import HierarchicalMemoryWriter, cosine_sim
 
 
 class HierarchicalRetriever:
-    """
-    Args:
-        alpha: weight for visual embedding similarity (dominant semantic signal).
-        beta: weight for summary text embedding similarity. alpha + beta should sum to 1.
-        tau_fraction: decay timescale as a fraction of the stream span. The
-            multiplier becomes ~0.37 at dt = tau and ~0.14 at dt = 2*tau, so a
-            smaller ``tau_fraction`` makes the temporal prior sharper. 0.50 means
-            an entry in the opposite half of the stream is scaled to ~0.37; the
-            very far ends drop to ~0.14. Lower values (e.g. 0.25) are sharper
-            and better suit "right now" queries exclusively; higher values
-            (0.75+) are gentler and let "earlier in the video" queries compete.
-    """
-
     def __init__(
         self,
         alpha: float = 0.70,
@@ -82,21 +32,7 @@ class HierarchicalRetriever:
         query_time: Optional[float] = None,
         recent_episodes: int = 5,
     ) -> RetrievalResult:
-        """
-        Args:
-            query: raw query text (stored in result for provenance).
-            query_embedding: L2-normalised text embedding of the query.
-            memory: the live memory object to search.
-            top_m: number of coarse EventEntry hits.
-            top_k: number of fine EpisodeEntry hits (also applied to recent search).
-            neighbor_radius: window radius passed to get_grounding_windows for archive lookup.
-            query_summary_embedding: separate summary-space embedding; defaults to query_embedding.
-            query_time: stream timestamp when the query is asked. When provided,
-                retrieval prefers entries temporally close to that moment.
-            recent_episodes: number of trailing episodes always added to the fine
-                candidate pool, bypassing the coarse-event gate. Prevents tail
-                episodes not yet rolled into any event from being hidden.
-        """
+        """Stage 0 (recent) + Stage A (events) + Stage B (episodes) + Stage C (grounding windows)"""
         q_sum_emb = query_summary_embedding if query_summary_embedding is not None else query_embedding
 
         recent = memory.get_recent_windows()
@@ -173,10 +109,7 @@ class HierarchicalRetriever:
         summary_emb: Optional[np.ndarray],
         decay: float,
     ) -> float:
-        # Peak-over-vectors: for events we pass multiple representative-window
-        # embeddings and take the max cosine to undo centroid-of-centroids blur.
-        # Episodes and recent windows pass a single-element list (pooled episode
-        # centroid / own embedding), so max() degenerates to a plain cosine.
+        """(alpha * vis_sim + beta * txt_sim) * decay, max-pool vis_sim over reps"""
         vis_sim = max(cosine_sim(query_vis_emb, v) for v in visual_embs)
         if summary_emb is not None:
             txt_sim = cosine_sim(query_txt_emb, summary_emb)
@@ -187,6 +120,7 @@ class HierarchicalRetriever:
 
     @staticmethod
     def _build_rep_index(memory, events) -> dict:
+        """event_id -> list of rep-window visual embeddings, for peak-over-reps scoring"""
         archive = memory._window_archive
         index: dict = {}
         for entry in events:
@@ -204,6 +138,7 @@ class HierarchicalRetriever:
 
     @staticmethod
     def _vectors_for(entry, rep_vectors: dict) -> List[np.ndarray]:
+        """rep vectors for an entry, falling back to its own embedding"""
         reps = rep_vectors.get(entry.entry_id)
         return reps if reps else [entry.visual_embedding]
 
@@ -217,6 +152,7 @@ class HierarchicalRetriever:
         rep_vectors: dict,
         query_time: Optional[float] = None,
     ) -> Tuple[List[EventEntry], dict, List[Tuple[float, float]]]:
+        """stage A — rank events, force-include the newest one, return their time ranges"""
         if not long_term:
             return [], {}, []
 
@@ -264,6 +200,7 @@ class HierarchicalRetriever:
         query_time: Optional[float] = None,
         recent_n: int = 5,
     ) -> Tuple[List[EpisodeEntry], dict]:
+        """stage B — rank episodes inside stage-A ranges, plus the recent_n tail"""
         if not episodic:
             return [], {}
 
@@ -275,8 +212,6 @@ class HierarchicalRetriever:
                     for start, end in candidate_ranges
                 )
             ]
-            # Always keep the trailing tail of episodes searchable: they may not
-            # yet overlap any top-M event range (especially before consolidation).
             tail = episodic[-recent_n:] if recent_n > 0 else []
             seen: set = set()
             candidates: List[EpisodeEntry] = []

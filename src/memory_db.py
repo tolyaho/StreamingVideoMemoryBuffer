@@ -1,19 +1,6 @@
-"""SQLite persistence layer for the hierarchical memory buffer.
+"""SQLite sidecar (via peewee) for the memory buffer.
+Lets me inspect long runs or resume after a crash."""
 
-Uses peewee as an ORM over a single-file SQLite database. The writer calls a
-``MemoryStore`` facade to persist windows, episodes, and events as they are
-produced. Embeddings are stored as raw float32 blobs; representative frames are
-stored as JPEG bytes.
-
-Schema
-------
-``window``            one row per ingested window (recent + promoted)
-``episode``           one row per flushed episode
-``episode_window``    join table (episode ↔ member windows, ordered, flag for rep)
-``event``             one row per consolidated event
-``event_episode``     join table (event ↔ member episodes, ordered)
-``event_rep_window``  join table (event ↔ representative windows, ordered)
-"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -162,13 +149,7 @@ def _frame_to_jpeg(frame: Optional[np.ndarray], quality: int = 90) -> Optional[b
 
 
 class MemoryStore:
-    """facade the HierarchicalMemoryWriter writes through.
-
-    Args:
-        path: sqlite file path. use ``:memory:`` for an in-memory test DB.
-        store_frames: if True, persist representative frames as JPEG blobs.
-        jpeg_quality: JPEG quality for persisted frames (1-100).
-    """
+    """facade the HierarchicalMemoryWriter writes through"""
 
     def __init__(
         self,
