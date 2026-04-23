@@ -1,0 +1,71 @@
+{
+  "sample_id": 36,
+  "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_36/video.mp4",
+  "qas": [
+    {
+      "question_id": "Real-Time Visual Understanding_sample_36_1",
+      "task_type": "Attribute Perception",
+      "question": "What color are the kitchen cupboards?",
+      "time_stamp": "00:03:22",
+      "answer": "B",
+      "options": [
+        "A. Dark blue.",
+        "B. Light green.",
+        "C. White.",
+        "D. Yellow."
+      ]
+    },
+    {
+      "question_id": "Real-Time Visual Understanding_sample_36_2",
+      "task_type": "Action Perception",
+      "question": "What is the person doing with the box grater?",
+      "time_stamp": "00:03:27",
+      "answer": "D",
+      "options": [
+        "A. Slicing bread.",
+        "B. Chopping vegetables.",
+        "C. Peeling potatoes.",
+        "D. Grating a yellow ingredient."
+      ]
+    },
+    {
+      "question_id": "Real-Time Visual Understanding_sample_36_3",
+      "task_type": "Object Perception",
+      "question": "What is the person in a blue shirt chopping on the wooden cutting board?",
+      "time_stamp": "00:06:42",
+      "answer": "A",
+      "options": [
+        "A. Red bell pepper.",
+        "B. Carrots.",
+        "C. Green bell pepper.",
+        "D. Onions."
+      ]
+    },
+    {
+      "question_id": "Real-Time Visual Understanding_sample_36_4",
+      "task_type": "Object Perception",
+      "question": "What is the person holding right now?",
+      "time_stamp": "00:10:02",
+      "answer": "A",
+      "options": [
+        "A. A wooden spoon.",
+        "B. A metal spatula.",
+        "C. A whisk.",
+        "D. A ladle."
+      ]
+    },
+    {
+      "question_id": "Real-Time Visual Understanding_sample_36_5",
+      "task_type": "Object Perception",
+      "question": "What is the person holding in the right hand right now?",
+      "time_stamp": "00:13:19",
+      "answer": "C",
+      "options": [
+        "A. A pen.",
+        "B. A ladle.",
+        "C. A pan.",
+        "D. A rolling pin."
+      ]
+    }
+  ]
+}

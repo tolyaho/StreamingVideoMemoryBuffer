@@ -16,6 +16,7 @@ jupyterlab
 datasets
 huggingface_hub
 yt-dlp
+ipywidgets
 
 einops
 timm
