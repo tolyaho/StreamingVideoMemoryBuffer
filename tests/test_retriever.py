@@ -17,6 +17,7 @@ class _FakeMemory:
         self.long_term = events
         self._episodes = episodes
         self._recent = recent or []
+        self._window_archive: dict = {}
 
     def get_recent_windows(self):
         return list(self._recent)
@@ -97,6 +98,7 @@ class RetrieverTemporalTests(unittest.TestCase):
             episodic=[inside, tail],
             candidate_ranges=[(0.0, 10.0)],
             top_k=1,
+            span=204.0,
             recent_n=2,
         )
 
@@ -130,6 +132,7 @@ class RetrieverTemporalTests(unittest.TestCase):
             episodic=[near, far_future],
             candidate_ranges=[],
             top_k=1,
+            span=304.0,
             query_time=100.0,
         )
 
@@ -172,6 +175,7 @@ class RetrieverTemporalTests(unittest.TestCase):
             episodic=[strong_but_far, partial_but_near],
             candidate_ranges=[],
             top_k=1,
+            span=110.0,
             query_time=110.0,
         )
 

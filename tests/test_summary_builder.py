@@ -1,11 +1,11 @@
 import unittest
 
-from src.summary_builder import SummaryBuilder
+from src.prompts import build_event_vlm_prompt
 
 
 class EventPromptTests(unittest.TestCase):
     def test_event_prompt_emphasizes_dense_query_useful_content(self) -> None:
-        prompt = SummaryBuilder._build_event_vlm_prompt(
+        prompt = build_event_vlm_prompt(
             bulleted="- Scene 1 [0.0s-3.0s]: A person cooks at a stove.",
             n_frames=2,
             n_scenes=1,

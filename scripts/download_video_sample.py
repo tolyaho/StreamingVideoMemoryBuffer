@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
-"""download shard_1_50 of Real_Time_Visual_Understanding from StreamingBench.
-
-default: download the mjuicem zip, extract videos, and write qas.json.
-
-with --annotations-only: only load ngqtrung/StreamingBench annotations (small),
-match sample_1..sample_N to existing video.mp4 under --videos-root, and write
-qas.json next to each video (no zip download).
-"""
+# Download shard_1_50 of StreamingBench Real_Time_Visual_Understanding and
+# write qas.json next to each video. --annotations-only skips the zip.
 import argparse
 import ast
 import json
@@ -46,7 +40,6 @@ def sample_id_from_row(row):
 
 
 def find_video_in_zip(zf, sample_id):
-    """find the mp4 for a given sample id inside the zip."""
     videos = [
         m for m in zf.namelist()
         if m.lower().endswith(".mp4") and not m.endswith("/") and "__MACOSX" not in m
@@ -76,7 +69,6 @@ def extract_video(zf, member, dest_dir):
 
 
 def find_local_video(videos_root: Path, sid: int) -> Path | None:
-    """resolve an existing mp4 for sample sid under videos_root/sample_<sid>/."""
     sample_dir = videos_root / f"sample_{sid}"
     if not sample_dir.is_dir():
         return None
@@ -126,7 +118,6 @@ def qas_payload(rows, sid: int, video_path: Path):
 
 
 def run_from_local_videos(grouped: dict, videos_root: Path) -> tuple[int, int]:
-    """write qas.json next to each existing video.mp4; no zip."""
     root = videos_root.resolve()
     if not root.is_dir():
         raise FileNotFoundError(f"videos root not found: {root}")
