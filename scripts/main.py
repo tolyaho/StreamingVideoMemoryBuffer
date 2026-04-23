@@ -40,7 +40,6 @@ W = 68  # line width for decorations
 
 
 def _clean_outputs_dir(out_dir: Path) -> None:
-    """Remove previous run artifacts under ``outputs/`` (fresh DB + retrievals, etc.)."""
     if not out_dir.is_dir():
         return
     for child in out_dir.iterdir():
@@ -51,7 +50,6 @@ def _clean_outputs_dir(out_dir: Path) -> None:
 
 
 def _hms_to_seconds(ts: str) -> float:
-    """'HH:MM:SS' / 'MM:SS' / 'SS' → seconds."""
     parts = [float(p) for p in ts.strip().split(":")]
     if len(parts) == 3:
         h, m, s = parts
@@ -63,7 +61,6 @@ def _hms_to_seconds(ts: str) -> float:
 
 
 def _load_qas(path: Path) -> list[dict]:
-    """StreamingBench QAs sorted by timestamp, with a ``t_seconds`` field added per QA."""
     if not path.exists():
         print(f"[main] no qas.json at {path} — retrieval step skipped.")
         return []
@@ -123,7 +120,6 @@ def _flush_new(memory: HierarchicalMemoryWriter, ep_seen: int, ev_seen: int) -> 
 
 
 def _render_retrieval(qa: dict, stream_time: float, result, formatter: ReasonerInputFormatter) -> str:
-    """One QA → self-contained markdown block (QA metadata + formatted evidence)."""
     options_lines = "\n".join(f"  - {opt}" for opt in qa.get("options", []))
     options_block = f"- **options**:\n{options_lines}\n" if options_lines else ""
     evidence = formatter.format_text(result)
@@ -151,15 +147,6 @@ def _process_due_qas(
     ep_seen: int,
     ev_seen: int,
 ) -> tuple[int, int, int]:
-    """Fire retrieval for every QA whose timestamp has been reached.
-
-    If at least one QA is due, ``memory.flush_pending()`` is called first so the
-    currently-forming episode/event becomes visible to coarse/fine routing. Any
-    episodes/events produced by the flush are printed before the retrieval output.
-
-    Returns ``(cursor, ep_seen, ev_seen)`` so the caller can keep its display counters
-    in sync.
-    """
     if cursor >= len(qas) or qas[cursor]["t_seconds"] > stream_time:
         return cursor, ep_seen, ev_seen
 
