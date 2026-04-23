@@ -84,5 +84,4 @@ tests/
 notebooks/*.png
 
 # Scratchpads and personal / sensitive notes
-notes/answer.py
-notes/cookies*.txt
+notes/
