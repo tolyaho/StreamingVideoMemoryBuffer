@@ -17,8 +17,8 @@ Hierarchical three-tier memory buffer (recent -> episodic -> long-term events) f
   - `formatter.py` — packs retrieval hits into an LLM-ready dict (`visual_context` + `text_context`).
   - `llm_reasoner.py` — Qwen2.5-3B-Instruct text-only MCQ head.
   - `baseline.py` — `RecentWindowBaseline` (flat deque-of-N) for head-to-head comparison.
-  - `memory_db.py` — optional peewee/SQLite sidecar for long runs.
-- `scripts/` — **optional** CLI helpers (not needed to run the notebook).
+  - `memory_db.py` — optional peewee/SQLite backing store for long runs.
+- `scripts/` — optional CLI helpers (not needed to run the notebook).
   - `main.py` — standalone end-to-end pipeline + retrieval harness.
   - `download_video_sample.py` — fetch StreamingBench samples.
 - `notes/` — design doc, plan, architecture writeup, evaluation notes.
