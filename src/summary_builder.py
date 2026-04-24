@@ -1,5 +1,5 @@
 """Text summaries per tier: Florence-2 on windows, Moondream2 on episodes, Qwen2.5-VL on events.
-Every tier is optional and falls back to a time-template when its model is off."""
+P.S. every tier is optional and falls back to a time-template when its model is off."""
 from __future__ import annotations
 
 import types
