@@ -21,7 +21,6 @@ Hierarchical three-tier memory buffer (recent -> episodic -> long-term events) f
 - `scripts/` — optional CLI helpers (not needed to run the notebook).
   - `main.py` — standalone end-to-end pipeline + retrieval harness.
   - `download_video_sample.py` — fetch StreamingBench samples.
-- `notes/` — design doc, plan, architecture writeup, evaluation notes.
 - `data/` — only `qas*.jsonl` annotations are tracked; videos are fetched locally.
 - `requirements.txt` — pinned deps.
 

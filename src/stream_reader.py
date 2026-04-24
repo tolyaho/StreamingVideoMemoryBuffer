@@ -32,7 +32,7 @@ class StreamReader:
     def __init__(
         self,
         fps: float = 1.0,
-        window_duration: float = 5.0,
+        window_duration: float = 3.0,
     ):
         self.fps = fps
         self.window_duration = window_duration
