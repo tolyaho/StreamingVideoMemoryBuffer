@@ -1,4 +1,3 @@
-"""All free-text model prompts in one place — easier to tweak, keeps the model code thin."""
 from __future__ import annotations
 
 from typing import Optional, Sequence
