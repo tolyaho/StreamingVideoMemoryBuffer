@@ -163,6 +163,7 @@ def _process_due_qas(
             top_m=RETRIEVAL_TOP_M,
             top_k=RETRIEVAL_TOP_K,
             query_time=stream_time,
+            pin_recent_n=RECENT_CAPACITY,
         )
         print()
         print(formatter.format_text(result))

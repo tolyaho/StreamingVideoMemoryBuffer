@@ -31,6 +31,7 @@ class HierarchicalRetriever:
         query_summary_embedding: Optional[np.ndarray] = None,
         query_time: Optional[float] = None,
         recent_episodes: int = 5,
+        pin_recent_n: int = 0,
     ) -> RetrievalResult:
         """Stage 0 (recent) + Stage A (events) + Stage B (episodes) + Stage C (grounding windows)"""
         q_sum_emb = query_summary_embedding if query_summary_embedding is not None else query_embedding
@@ -84,7 +85,11 @@ class HierarchicalRetriever:
         for ep in episodic_hits:
             archive_windows.extend(memory.get_grounding_windows(ep, radius=neighbor_radius))
 
-        seen: set = set()
+        pinned: List[WindowEntry] = []
+        if pin_recent_n > 0 and recent:
+            pinned = recent[-pin_recent_n:]
+
+        seen: set = {w.entry_id for w in pinned}
         grounded: List[WindowEntry] = []
         for w in recent_hits + archive_windows:
             if w.entry_id not in seen:
@@ -99,6 +104,7 @@ class HierarchicalRetriever:
             episodic_hits=episodic_hits,
             grounded_windows=grounded,
             scores=scores,
+            pinned_windows=pinned,
         )
 
     def _blended_score(

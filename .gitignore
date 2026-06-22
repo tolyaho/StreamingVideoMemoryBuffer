@@ -44,6 +44,8 @@ notebooks/reference.ipynb
 .env.*
 !.env.example
 private_tokens.py
+*cookies*.txt
+.youtube_cookies.txt
 
 # OS
 .DS_Store
