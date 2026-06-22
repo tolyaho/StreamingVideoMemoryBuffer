@@ -77,3 +77,4 @@ class RetrievalResult:
     episodic_hits: List[EpisodeEntry]
     grounded_windows: List[WindowEntry]
     scores: dict  # entry_id -> float score
+    pinned_windows: List[WindowEntry] = field(default_factory=list)

@@ -15,6 +15,12 @@ class ReasonerInputFormatter:
             "=" * 64,
         ]
 
+        if result.pinned_windows:
+            lines.append("\n[Pinned — most recent stream windows]")
+            for w in result.pinned_windows:
+                note = f"  {w.summary_text}" if w.summary_text else ""
+                lines.append(f"  [{w.start_time:.1f}–{w.end_time:.1f}s]{note}")
+
         if result.coarse_hits:
             lines.append("\n[Coarse — event-level routing hits]")
             for ev in result.coarse_hits:
@@ -54,6 +60,16 @@ class ReasonerInputFormatter:
         query_embedding: Optional[np.ndarray] = None,
     ) -> dict:
         visual_tokens = []
+
+        for w in result.pinned_windows:
+            visual_tokens.append({
+                "source": "pinned_recent",
+                "time_range": [round(w.start_time, 2), round(w.end_time, 2)],
+                "embedding_dim": w.visual_embedding.shape[0],
+                "embedding": w.visual_embedding.tolist(),
+                "summary": w.summary_text,
+                "score": None,
+            })
 
         for ep in result.episodic_hits:
             visual_tokens.append({
