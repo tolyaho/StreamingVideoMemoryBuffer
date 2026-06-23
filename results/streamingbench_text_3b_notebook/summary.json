@@ -1,0 +1,71 @@
+{
+  "n_qas": 250,
+  "hierarchical": {
+    "correct": 128,
+    "accuracy": 0.512
+  },
+  "baseline": {
+    "correct": 109,
+    "accuracy": 0.436
+  },
+  "delta_accuracy": 0.076,
+  "paired": {
+    "hierarchical_only": 46,
+    "baseline_only": 27,
+    "both_correct": 82,
+    "both_wrong": 95
+  },
+  "by_task_type": {
+    "Action Perception": {
+      "n": 51,
+      "hierarchical_accuracy": 0.3137,
+      "baseline_accuracy": 0.3922
+    },
+    "Attribute Perception": {
+      "n": 36,
+      "hierarchical_accuracy": 0.3889,
+      "baseline_accuracy": 0.3611
+    },
+    "Causal Reasoning": {
+      "n": 9,
+      "hierarchical_accuracy": 0.5556,
+      "baseline_accuracy": 0.7778
+    },
+    "Clips Summarize": {
+      "n": 2,
+      "hierarchical_accuracy": 1.0,
+      "baseline_accuracy": 0.5
+    },
+    "Counting": {
+      "n": 2,
+      "hierarchical_accuracy": 0.5,
+      "baseline_accuracy": 0.5
+    },
+    "Event Understanding": {
+      "n": 25,
+      "hierarchical_accuracy": 0.64,
+      "baseline_accuracy": 0.56
+    },
+    "Object Perception": {
+      "n": 102,
+      "hierarchical_accuracy": 0.5882,
+      "baseline_accuracy": 0.4118
+    },
+    "Prospective Reasoning": {
+      "n": 2,
+      "hierarchical_accuracy": 0.5,
+      "baseline_accuracy": 0.5
+    },
+    "Spatial Understanding": {
+      "n": 3,
+      "hierarchical_accuracy": 0.6667,
+      "baseline_accuracy": 0.6667
+    },
+    "Text-Rich Understanding": {
+      "n": 18,
+      "hierarchical_accuracy": 0.6111,
+      "baseline_accuracy": 0.4444
+    }
+  },
+  "videos_completed": 50
+}

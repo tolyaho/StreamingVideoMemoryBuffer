@@ -1,0 +1,29 @@
+{
+  "benchmark": "StreamingBench",
+  "manifest": "data/eval_manifest_50.json",
+  "videos": 50,
+  "qas": 250,
+  "reasoner_type": "text",
+  "reasoner_model": "Qwen/Qwen2.5-3B-Instruct",
+  "config": "notebook",
+  "command": "python scripts/eval_batch.py --config notebook --output-dir outputs/eval_batch --reasoner-type text",
+  "hyperparameters": {
+    "fps": 1.0,
+    "window_duration": 3.0,
+    "recent_capacity": 20,
+    "baseline_recent_capacity": 20,
+    "episodic_capacity": 100,
+    "novelty_threshold": 0.05,
+    "episode_max_gap": 8.0,
+    "event_max_gap": 45.0,
+    "episodic_merge_batch": 10,
+    "event_min_episode_sim": 0.55,
+    "top_m": 3,
+    "top_k": 5,
+    "baseline_top_k": 5,
+    "tau_fraction": 0.25,
+    "neighbor_radius": 1,
+    "recent_episodes": 5,
+    "pin_recent_n": 20
+  }
+}
