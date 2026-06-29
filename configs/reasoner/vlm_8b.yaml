@@ -1,0 +1,3 @@
+type: vlm
+model: Qwen/Qwen3-VL-8B-Instruct
+share_event_vlm: true

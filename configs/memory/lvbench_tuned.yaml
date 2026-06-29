@@ -1,0 +1,10 @@
+fps: 1.0
+window_duration: 3.0
+recent_capacity: 30
+baseline_recent_capacity: 20
+episodic_capacity: 150
+novelty_threshold: 0.02
+episode_max_gap: 6.0
+event_max_gap: 30.0
+episodic_merge_batch: 15
+event_min_episode_sim: 0.62

@@ -1,0 +1,16 @@
+# @package _global_
+
+defaults:
+  - /dataset: streamingbench_50
+  - /memory: notebook
+  - /retrieval: vlm_full
+  - /summary: full
+  - /reasoner: vlm_8b
+  - /output: streamingbench_vlm
+  - _self_
+
+experiment: streamingbench_vlm
+
+hydra:
+  job:
+    chdir: false

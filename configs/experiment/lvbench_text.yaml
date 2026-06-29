@@ -1,0 +1,16 @@
+# @package _global_
+
+defaults:
+  - /dataset: lvbench_eval
+  - /memory: lvbench_tuned
+  - /retrieval: lvbench_tuned
+  - /summary: full
+  - /reasoner: text_3b
+  - /output: lvbench_text
+  - _self_
+
+experiment: lvbench_text
+
+hydra:
+  job:
+    chdir: false

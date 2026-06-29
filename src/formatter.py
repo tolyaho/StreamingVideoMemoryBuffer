@@ -8,7 +8,13 @@ from .data_structures import RetrievalResult
 
 
 class ReasonerInputFormatter:
-    def format_text(self, result: RetrievalResult) -> str:
+    def format_text(
+        self,
+        result: RetrievalResult,
+        *,
+        include_coarse: bool = True,
+        include_episodic: bool = True,
+    ) -> str:
         lines = [
             "=" * 64,
             f"QUERY: {result.query}",
@@ -21,7 +27,7 @@ class ReasonerInputFormatter:
                 note = f"  {w.summary_text}" if w.summary_text else ""
                 lines.append(f"  [{w.start_time:.1f}–{w.end_time:.1f}s]{note}")
 
-        if result.coarse_hits:
+        if include_coarse and result.coarse_hits:
             lines.append("\n[Coarse — event-level routing hits]")
             for ev in result.coarse_hits:
                 score = result.scores.get(ev.entry_id, "—")
@@ -31,7 +37,7 @@ class ReasonerInputFormatter:
                     f"sim={score_str}  {ev.summary_text}"
                 )
 
-        if result.episodic_hits:
+        if include_episodic and result.episodic_hits:
             lines.append("\n[Fine — episodic memory hits]")
             for ep in result.episodic_hits:
                 score = result.scores.get(ep.entry_id, "—")
@@ -58,6 +64,9 @@ class ReasonerInputFormatter:
         self,
         result: RetrievalResult,
         query_embedding: Optional[np.ndarray] = None,
+        *,
+        include_coarse: bool = True,
+        include_episodic: bool = True,
     ) -> dict:
         visual_tokens = []
 
@@ -71,15 +80,16 @@ class ReasonerInputFormatter:
                 "score": None,
             })
 
-        for ep in result.episodic_hits:
-            visual_tokens.append({
-                "source": "episodic",
-                "time_range": [round(ep.start_time, 2), round(ep.end_time, 2)],
-                "embedding_dim": ep.visual_embedding.shape[0],
-                "embedding": ep.visual_embedding.tolist(),
-                "summary": ep.summary_text,
-                "score": result.scores.get(ep.entry_id),
-            })
+        if include_episodic:
+            for ep in result.episodic_hits:
+                visual_tokens.append({
+                    "source": "episodic",
+                    "time_range": [round(ep.start_time, 2), round(ep.end_time, 2)],
+                    "embedding_dim": ep.visual_embedding.shape[0],
+                    "embedding": ep.visual_embedding.tolist(),
+                    "summary": ep.summary_text,
+                    "score": result.scores.get(ep.entry_id),
+                })
 
         for w in result.grounded_windows:
             visual_tokens.append({
@@ -97,7 +107,11 @@ class ReasonerInputFormatter:
                 query_embedding.tolist() if query_embedding is not None else None
             ),
             "visual_context": visual_tokens,
-            "text_context": self.format_text(result),
+            "text_context": self.format_text(
+                result,
+                include_coarse=include_coarse,
+                include_episodic=include_episodic,
+            ),
             "n_visual_tokens": len(visual_tokens),
             "coarse_event_count": len(result.coarse_hits),
             "episodic_hit_count": len(result.episodic_hits),

@@ -1,0 +1,7 @@
+top_m: 2
+top_k: 8
+baseline_top_k: 5
+tau_fraction: 0.08
+neighbor_radius: 2
+recent_episodes: 8
+pin_recent_n: 20

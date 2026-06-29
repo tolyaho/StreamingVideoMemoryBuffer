@@ -12,23 +12,28 @@ sys.path.insert(0, str(ROOT))
 
 from src import (
     HierarchicalRetriever,
-    LLMReasoner,
     PerceptionEncoder,
     ReasonerInputFormatter,
     SummaryBuilder,
 )
 
+from src.qwen_vl_io import TEXT_EVAL_EVENT_VLM
+
 from scripts.eval_common import (
     EvalConfig,
     NOTEBOOK_CONFIG,
+    VLM_FULL_CONFIG,
+    VLM_STREAMING_CONFIG,
     print_final_summary,
     refresh_summary,
     run_video,
     save_video_results,
 )
+from scripts.reasoner_factory import ReasonerType, build_reasoner, default_reasoner_model
 
 DEFAULT_MANIFEST = ROOT / "data/lvbench_eval_manifest.json"
 DEFAULT_OUT = ROOT / "outputs/eval_lvbench"
+RECORDS_GLOB = "*.jsonl"
 
 LVBENCH_TUNED_CONFIG = EvalConfig(
     recent_capacity=30,
@@ -47,9 +52,11 @@ LVBENCH_TUNED_CONFIG = EvalConfig(
     recent_episodes=8,
 )
 
-EVAL_CONFIGS = {
+LVBENCH_EVAL_CONFIGS = {
     "notebook": NOTEBOOK_CONFIG,
     "lvbench_tuned": LVBENCH_TUNED_CONFIG,
+    "vlm_full": VLM_FULL_CONFIG,
+    "vlm_streaming": VLM_STREAMING_CONFIG,
 }
 
 
@@ -70,16 +77,40 @@ def main() -> None:
     )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument(
-        "--config",
-        choices=sorted(EVAL_CONFIGS),
-        default="notebook",
+        "--reasoner-type",
+        choices=("text", "vlm"),
+        default="text",
+        help="text: captions only; vlm: retrieved frames + text memory",
     )
     parser.add_argument(
         "--reasoner-model",
-        default="Qwen/Qwen2.5-3B-Instruct",
-        help="HF model id for text-only MCQ reasoner",
+        default="",
+        help="HF model id (default: 3B-Instruct for text, Qwen3-VL-8B for vlm)",
+    )
+    parser.add_argument(
+        "--no-share-event-vlm",
+        action="store_true",
+        help="load a separate VLM for reasoning instead of reusing the event VLM",
+    )
+    parser.add_argument(
+        "--config",
+        choices=sorted(LVBENCH_EVAL_CONFIGS),
+        default="",
+        help="hyperparameter preset (default: lvbench_tuned for text, vlm_full for vlm)",
     )
     args = parser.parse_args()
+
+    reasoner_type: ReasonerType = args.reasoner_type
+    reasoner_model = args.reasoner_model or default_reasoner_model(reasoner_type)
+    if args.config:
+        cfg = LVBENCH_EVAL_CONFIGS[args.config]
+    elif reasoner_type == "vlm":
+        cfg = VLM_FULL_CONFIG
+    else:
+        cfg = LVBENCH_TUNED_CONFIG
+    config_name = args.config or (
+        "vlm_full" if reasoner_type == "vlm" else "lvbench_tuned"
+    )
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     wanted = None
@@ -93,19 +124,30 @@ def main() -> None:
     per_video_dir = out_dir / "per_video"
     per_video_dir.mkdir(parents=True, exist_ok=True)
 
-    cfg = EVAL_CONFIGS[args.config]
     print(f"[lvbench] manifest : {args.manifest}")
-    print(f"[lvbench] config   : {args.config}")
-    print(f"[lvbench] reasoner : {args.reasoner_model}")
+    print(f"[lvbench] config   : {config_name}")
+    print(f"[lvbench] reasoner : {reasoner_type} ({reasoner_model})")
     print(f"[lvbench] videos   : {len(entries)}")
     print(f"[lvbench] output   : {out_dir}")
     print("[lvbench] loading models (once)...")
 
     encoder = PerceptionEncoder()
-    summary_builder = SummaryBuilder(use_model=True, use_vlm=True, use_moondream=True)
+    event_vlm_name = reasoner_model if reasoner_type == "vlm" else TEXT_EVAL_EVENT_VLM
+    summary_builder = SummaryBuilder(
+        use_model=True,
+        use_vlm=True,
+        use_moondream=True,
+        vlm_model_name=event_vlm_name,
+    )
     retriever = HierarchicalRetriever(tau_fraction=cfg.tau_fraction)
     formatter = ReasonerInputFormatter()
-    reasoner = LLMReasoner(model_name=args.reasoner_model)
+    reasoner = build_reasoner(
+        reasoner_type,
+        reasoner_model,
+        cfg,
+        summary_builder,
+        share_event_vlm=not args.no_share_event_vlm,
+    )
     print("[lvbench] models ready.\n")
 
     for i, entry in enumerate(entries, start=1):
@@ -140,7 +182,9 @@ def main() -> None:
                 "video_key": video_key,
                 "type": entry.get("type"),
                 "duration_minutes": entry.get("duration_minutes"),
-                "config": args.config,
+                "reasoner_type": reasoner_type,
+                "reasoner_model": reasoner_model,
+                "config": config_name,
             },
         )
         _, h_ok, b_ok = save_video_results(
@@ -149,6 +193,7 @@ def main() -> None:
             out_path,
             records,
             meta,
+            records_glob=RECORDS_GLOB,
             summary_title="LVBench eval summary",
         )
         print(
@@ -158,7 +203,10 @@ def main() -> None:
         )
 
     summary = refresh_summary(
-        out_dir, per_video_dir, title="LVBench eval summary"
+        out_dir,
+        per_video_dir,
+        records_glob=RECORDS_GLOB,
+        title="LVBench eval summary",
     )
     if summary.get("n_qas", 0) == 0:
         raise SystemExit("no QAs evaluated — download videos first?")

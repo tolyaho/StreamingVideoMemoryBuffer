@@ -5,11 +5,11 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 from src import (
     HierarchicalMemoryWriter,
     HierarchicalRetriever,
-    LLMReasoner,
     PerceptionEncoder,
     ReasonerInputFormatter,
     RecentWindowBaseline,
@@ -40,6 +40,10 @@ class EvalConfig:
     neighbor_radius: int = 1
     recent_episodes: int = 5
     pin_recent_n: int | None = None
+    reasoner_max_frames: int = 8
+    include_coarse_text: bool = True
+    include_episodic_text: bool = True
+    ground_episodic_archive: bool = True
 
     @property
     def baseline_windows(self) -> int:
@@ -61,6 +65,54 @@ class EvalConfig:
 
 
 NOTEBOOK_CONFIG = EvalConfig()
+
+# StreamingBench text eval — stronger recency + pinned recent context; baseline buffer unchanged.
+STREAMINGBENCH_TUNED_CONFIG = EvalConfig(
+    recent_capacity=30,
+    baseline_recent_capacity=20,
+    episodic_capacity=80,
+    novelty_threshold=0.04,
+    episode_max_gap=6.0,
+    event_max_gap=40.0,
+    episodic_merge_batch=8,
+    event_min_episode_sim=0.58,
+    top_m=2,
+    top_k=6,
+    baseline_top_k=5,
+    tau_fraction=0.10,
+    neighbor_radius=1,
+    recent_episodes=8,
+    pin_recent_n=20,
+)
+
+# Full hierarchical context (coarse + episodic text) plus retrieved episode key frames.
+VLM_FULL_CONFIG = EvalConfig(
+    reasoner_max_frames=10,
+    include_coarse_text=True,
+    include_episodic_text=True,
+    ground_episodic_archive=True,
+)
+
+# Legacy stripped config from early VLM debugging — not the intended design.
+VLM_STREAMING_CONFIG = EvalConfig(
+    top_m=1,
+    top_k=3,
+    tau_fraction=0.10,
+    neighbor_radius=0,
+    recent_episodes=2,
+    pin_recent_n=10,
+    reasoner_max_frames=6,
+    include_coarse_text=False,
+    include_episodic_text=False,
+    ground_episodic_archive=False,
+)
+
+EVAL_CONFIGS = {
+    "notebook": NOTEBOOK_CONFIG,
+    "streamingbench_tuned": STREAMINGBENCH_TUNED_CONFIG,
+    "vlm_full": VLM_FULL_CONFIG,
+    "vlm_streaming": VLM_STREAMING_CONFIG,
+}
 
 
 def hms_to_seconds(ts: str) -> float:
@@ -87,6 +139,17 @@ def parse_letter(prediction: str) -> str:
     return next((c for c in prediction.strip() if c in "ABCD"), "?")
 
 
+@runtime_checkable
+class Reasoner(Protocol):
+    def answer(
+        self,
+        llm_input: dict,
+        *,
+        options: list[str] | None = None,
+        retrieval: RetrievalResult | None = None,
+    ) -> str: ...
+
+
 def answer_hierarchical(
     qa: dict,
     stream_time: float,
@@ -94,7 +157,7 @@ def answer_hierarchical(
     encoder: PerceptionEncoder,
     retriever: HierarchicalRetriever,
     formatter: ReasonerInputFormatter,
-    reasoner: LLMReasoner,
+    reasoner: Reasoner,
     cfg: EvalConfig,
 ) -> dict:
     memory.flush_pending()
@@ -109,9 +172,17 @@ def answer_hierarchical(
         query_time=stream_time,
         recent_episodes=cfg.recent_episodes,
         pin_recent_n=cfg.pin_n,
+        ground_archive=cfg.ground_episodic_archive,
     )
-    llm_input = formatter.format_for_llm(result, query_embedding=q_emb)
-    prediction = reasoner.answer(llm_input, options=qa.get("options"))
+    llm_input = formatter.format_for_llm(
+        result,
+        query_embedding=q_emb,
+        include_coarse=cfg.include_coarse_text,
+        include_episodic=cfg.include_episodic_text,
+    )
+    prediction = reasoner.answer(
+        llm_input, options=qa.get("options"), retrieval=result
+    )
     letter = parse_letter(prediction)
     gt = qa["answer"]
     return {
@@ -127,21 +198,31 @@ def answer_baseline(
     encoder: PerceptionEncoder,
     baseline: RecentWindowBaseline,
     formatter: ReasonerInputFormatter,
-    reasoner: LLMReasoner,
+    reasoner: Reasoner,
     cfg: EvalConfig,
 ) -> dict:
     q_emb = encoder.encode_text(qa["question"])
     hits = baseline.retrieve(q_emb, top_k=cfg.baseline_k)
     scores = {w.entry_id: float(cosine_sim(q_emb, w.visual_embedding)) for w in hits}
+    recent = baseline.get_context()
+    pinned = recent[-cfg.pin_n :] if cfg.pin_n > 0 else []
     result = RetrievalResult(
         query=qa["question"],
         coarse_hits=[],
         episodic_hits=[],
         grounded_windows=hits,
         scores=scores,
+        pinned_windows=pinned,
     )
-    llm_input = formatter.format_for_llm(result, query_embedding=q_emb)
-    prediction = reasoner.answer(llm_input, options=qa.get("options"))
+    llm_input = formatter.format_for_llm(
+        result,
+        query_embedding=q_emb,
+        include_coarse=cfg.include_coarse_text,
+        include_episodic=cfg.include_episodic_text,
+    )
+    prediction = reasoner.answer(
+        llm_input, options=qa.get("options"), retrieval=result
+    )
     letter = parse_letter(prediction)
     gt = qa["answer"]
     return {
@@ -161,7 +242,7 @@ def process_due_qas(
     encoder: PerceptionEncoder,
     retriever: HierarchicalRetriever,
     formatter: ReasonerInputFormatter,
-    reasoner: LLMReasoner,
+    reasoner: Reasoner,
     records: list[dict],
     cfg: EvalConfig,
 ) -> int:
@@ -195,7 +276,7 @@ def run_video(
     summary_builder: SummaryBuilder,
     retriever: HierarchicalRetriever,
     formatter: ReasonerInputFormatter,
-    reasoner: LLMReasoner,
+    reasoner: Reasoner,
     cfg: EvalConfig = NOTEBOOK_CONFIG,
     extra_meta: dict | None = None,
 ) -> tuple[list[dict], dict]:

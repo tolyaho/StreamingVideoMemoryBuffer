@@ -1,0 +1,3 @@
+use_model: true
+use_vlm: true
+use_moondream: true

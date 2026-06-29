@@ -1,0 +1,7 @@
+name: lvbench
+manifest: data/lvbench_eval_manifest.json
+id_field: video_key
+records_glob: "*.jsonl"
+limit: null
+samples: []
+keys: []

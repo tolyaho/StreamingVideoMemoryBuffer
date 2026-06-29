@@ -1,0 +1,11 @@
+top_m: 1
+top_k: 3
+baseline_top_k: 5
+tau_fraction: 0.10
+neighbor_radius: 0
+recent_episodes: 2
+pin_recent_n: 10
+reasoner_max_frames: 6
+include_coarse_text: false
+include_episodic_text: false
+ground_episodic_archive: false

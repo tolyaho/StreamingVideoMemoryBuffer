@@ -1,0 +1,16 @@
+# @package _global_
+
+defaults:
+  - /dataset: streamingbench_50
+  - /memory: streamingbench_tuned
+  - /retrieval: streamingbench_tuned
+  - /summary: full
+  - /reasoner: text_3b
+  - /output: streamingbench_text
+  - _self_
+
+experiment: streamingbench_text
+
+hydra:
+  job:
+    chdir: false

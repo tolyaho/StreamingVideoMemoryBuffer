@@ -17,7 +17,7 @@ Canonical copies of batch eval outputs for the year report. Live runs write to `
 
 Hierarchical streaming memory improves MCQ accuracy by **~7 percentage points** over a recent-window baseline on StreamingBench with a text reasoner. Largest gains are on **Object Perception** and **Event Understanding** (see per-run `summary.md`).
 
-With a VLM reasoner (~80% accuracy), both systems perform similarly — retrieved frames from the recent buffer are sufficient and episodic memory adds little.
+With a VLM reasoner (~80% accuracy), both systems perform similarly — retrieved frames from the recent buffer are sufficient and episodic memory adds little. That run used the older stripped `vlm_streaming` preset; new config-driven runs default to `vlm_full`, while `retrieval=vlm_streaming` remains available for reproducing the committed result.
 
 ## Folder layout (each run)
 
@@ -42,4 +42,7 @@ scripts/run_streamingbench_text.sh
 
 # VLM 8B
 scripts/run_streamingbench_vlm.sh
+
+# Reproduce the committed VLM config exactly
+streamvmb experiment=streamingbench_vlm retrieval=vlm_streaming
 ```

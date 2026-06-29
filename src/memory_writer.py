@@ -145,6 +145,47 @@ class HierarchicalMemoryWriter:
             episodes.append(pending)
         return episodes
 
+    def get_episode_representative_windows(
+        self,
+        episode: EpisodeEntry,
+        radius: int = 0,
+    ) -> List[WindowEntry]:
+        """Key frames for a retrieved episode (self-centrality reps), optional neighbors."""
+        if episode.representative_window_ids:
+            base = [
+                self._window_archive[wid]
+                for wid in episode.representative_window_ids
+                if wid in self._window_archive
+            ]
+        else:
+            return self.get_grounding_windows(episode, radius=radius)
+
+        if radius <= 0 or not base:
+            return base
+
+        member = [
+            self._window_archive[wid]
+            for wid in episode.member_window_ids
+            if wid in self._window_archive
+        ]
+        id_to_idx = {w.entry_id: i for i, w in enumerate(member)}
+        out: List[WindowEntry] = []
+        seen: set[str] = set()
+        for w in base:
+            idx = id_to_idx.get(w.entry_id)
+            if idx is None:
+                if w.entry_id not in seen:
+                    seen.add(w.entry_id)
+                    out.append(w)
+                continue
+            lo = max(0, idx - radius)
+            hi = min(len(member), idx + radius + 1)
+            for nb in member[lo:hi]:
+                if nb.entry_id not in seen:
+                    seen.add(nb.entry_id)
+                    out.append(nb)
+        return out
+
     def get_grounding_windows(
         self,
         episode: EpisodeEntry,
