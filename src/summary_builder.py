@@ -161,40 +161,15 @@ class SummaryBuilder:
         print("Captioner ready.")
 
     def _load_vlm(self, model_name: str) -> None:
-        """Load Qwen2-VL / Qwen2.5-VL (event tier) with a capped per-image visual-token budget."""
-        import torch
-        from transformers import AutoProcessor
-
-        if not hasattr(torch.compiler, "is_compiling"):
-            torch.compiler.is_compiling = lambda: False
-
-        mn = model_name.lower()
-        if "qwen2.5-vl" in mn or "qwen2_5_vl" in mn:
-            from transformers import Qwen2_5_VLForConditionalGeneration as VlmCls
-        elif "qwen2-vl" in mn or "qwen2_vl" in mn:
-            from transformers import Qwen2VLForConditionalGeneration as VlmCls
-        else:
-            raise ValueError(
-                f"Unsupported VLM {model_name!r}; pass a Qwen2-VL-* or Qwen2.5-VL-* Instruct id."
-            )
+        from .qwen_vl_io import load_qwen_vl
 
         dev = self._vlm_device_arg or _default_torch_device(self.device)
-        dtype = _vlm_dtype_for_device(dev)
-        print(f"Loading event VLM {model_name} on {dev} ({dtype})…")
-        self._vlm_proc = AutoProcessor.from_pretrained(
+        print(f"Loading event VLM {model_name} on {dev}…")
+        self._vlm, self._vlm_proc, _ = load_qwen_vl(
             model_name,
-            min_pixels=self.vlm_image_min_pixels,
-            max_pixels=self.vlm_image_max_pixels,
-        )
-        attn_impl = "sdpa" if dev == "cuda" else "eager"
-        self._vlm = (
-            VlmCls.from_pretrained(
-                model_name,
-                dtype=dtype,
-                attn_implementation=attn_impl,
-            )
-            .to(dev)
-            .eval()
+            device=dev,
+            image_min_pixels=self.vlm_image_min_pixels,
+            image_max_pixels=self.vlm_image_max_pixels,
         )
         print("Event VLM ready.")
 

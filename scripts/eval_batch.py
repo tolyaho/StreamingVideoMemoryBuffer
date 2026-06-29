@@ -12,19 +12,23 @@ sys.path.insert(0, str(ROOT))
 
 from src import (
     HierarchicalRetriever,
-    LLMReasoner,
     PerceptionEncoder,
     ReasonerInputFormatter,
     SummaryBuilder,
 )
 
+from src.qwen_vl_io import TEXT_EVAL_EVENT_VLM
+
 from scripts.eval_common import (
-    NOTEBOOK_CONFIG,
+    EVAL_CONFIGS,
+    STREAMINGBENCH_TUNED_CONFIG,
+    VLM_FULL_CONFIG,
     print_final_summary,
     refresh_summary,
     run_video,
     save_video_results,
 )
+from scripts.reasoner_factory import ReasonerType, build_reasoner, default_reasoner_model
 
 DEFAULT_MANIFEST = ROOT / "data/eval_manifest_50.json"
 DEFAULT_OUT = ROOT / "outputs/eval_batch"
@@ -49,11 +53,40 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--pilot", action="store_true", help="shorthand for --samples 1,36")
     parser.add_argument(
+        "--reasoner-type",
+        choices=("text", "vlm"),
+        default="text",
+        help="text: captions only; vlm: retrieved frames + text memory",
+    )
+    parser.add_argument(
         "--reasoner-model",
-        default="Qwen/Qwen2.5-3B-Instruct",
-        help="HF model id for text-only MCQ reasoner",
+        default="",
+        help="HF model id (default: 3B-Instruct for text, Qwen3-VL-8B for vlm)",
+    )
+    parser.add_argument(
+        "--no-share-event-vlm",
+        action="store_true",
+        help="load a separate VLM for reasoning instead of reusing the event VLM",
+    )
+    parser.add_argument(
+        "--config",
+        choices=sorted(EVAL_CONFIGS),
+        default="",
+        help="hyperparameter preset (default: streamingbench_tuned for text, vlm_full for vlm)",
     )
     args = parser.parse_args()
+
+    reasoner_type: ReasonerType = args.reasoner_type
+    reasoner_model = args.reasoner_model or default_reasoner_model(reasoner_type)
+    if args.config:
+        cfg = EVAL_CONFIGS[args.config]
+    elif reasoner_type == "vlm":
+        cfg = VLM_FULL_CONFIG
+    else:
+        cfg = STREAMINGBENCH_TUNED_CONFIG
+    config_name = args.config or (
+        "vlm_full" if reasoner_type == "vlm" else "streamingbench_tuned"
+    )
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     if args.pilot:
@@ -71,18 +104,30 @@ def main() -> None:
     per_video_dir = out_dir / "per_video"
     per_video_dir.mkdir(parents=True, exist_ok=True)
 
-    cfg = NOTEBOOK_CONFIG
     print(f"[eval] manifest : {args.manifest}")
+    print(f"[eval] config   : {config_name}")
     print(f"[eval] videos   : {len(entries)}")
     print(f"[eval] output   : {out_dir}")
-    print(f"[eval] reasoner : {args.reasoner_model}")
+    print(f"[eval] reasoner : {reasoner_type} ({reasoner_model})")
     print("[eval] loading models (once)...")
 
     encoder = PerceptionEncoder()
-    summary_builder = SummaryBuilder(use_model=True, use_vlm=True, use_moondream=True)
+    event_vlm_name = reasoner_model if reasoner_type == "vlm" else TEXT_EVAL_EVENT_VLM
+    summary_builder = SummaryBuilder(
+        use_model=True,
+        use_vlm=True,
+        use_moondream=True,
+        vlm_model_name=event_vlm_name,
+    )
     retriever = HierarchicalRetriever(tau_fraction=cfg.tau_fraction)
     formatter = ReasonerInputFormatter()
-    reasoner = LLMReasoner(model_name=args.reasoner_model)
+    reasoner = build_reasoner(
+        reasoner_type,
+        reasoner_model,
+        cfg,
+        summary_builder,
+        share_event_vlm=not args.no_share_event_vlm,
+    )
     print("[eval] models ready.\n")
 
     for i, entry in enumerate(entries, start=1):
@@ -106,7 +151,12 @@ def main() -> None:
             formatter=formatter,
             reasoner=reasoner,
             cfg=cfg,
-            extra_meta={"sample_id": sid},
+            extra_meta={
+                "sample_id": sid,
+                "reasoner_type": reasoner_type,
+                "reasoner_model": reasoner_model,
+                "config": config_name,
+            },
         )
         _, h_ok, b_ok = save_video_results(
             out_dir,

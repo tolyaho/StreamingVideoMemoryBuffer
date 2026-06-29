@@ -1,0 +1,3 @@
+defaults:
+  - experiment: streamingbench_text
+  - _self_

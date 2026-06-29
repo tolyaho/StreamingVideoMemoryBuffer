@@ -1,0 +1,3 @@
+dir: outputs/streamingbench_text
+resume: false
+summary_title: StreamingBench text eval

@@ -56,6 +56,7 @@ class LLMReasoner:
         options: Optional[Sequence[str]] = None,
         max_new_tokens: Optional[int] = None,
         system: str = SYSTEM_PROMPT,
+        retrieval=None,
     ) -> str:
         import torch
 

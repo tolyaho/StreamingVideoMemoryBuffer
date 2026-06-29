@@ -79,9 +79,6 @@ huggingface/
 outputs/
 notebooks/outputs/
 
-# Tests
-tests/
-
 # Notebook assets — keep SVGs only; PNG exports are unused by the notebook
 notebooks/*.png
 

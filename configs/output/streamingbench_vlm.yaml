@@ -1,0 +1,3 @@
+dir: outputs/streamingbench_vlm
+resume: false
+summary_title: StreamingBench VLM eval

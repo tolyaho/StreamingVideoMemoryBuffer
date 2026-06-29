@@ -32,6 +32,7 @@ class HierarchicalRetriever:
         query_time: Optional[float] = None,
         recent_episodes: int = 5,
         pin_recent_n: int = 0,
+        ground_archive: bool = True,
     ) -> RetrievalResult:
         """Stage 0 (recent) + Stage A (events) + Stage B (episodes) + Stage C (grounding windows)"""
         q_sum_emb = query_summary_embedding if query_summary_embedding is not None else query_embedding
@@ -82,8 +83,13 @@ class HierarchicalRetriever:
         )
 
         archive_windows: List[WindowEntry] = []
-        for ep in episodic_hits:
-            archive_windows.extend(memory.get_grounding_windows(ep, radius=neighbor_radius))
+        if ground_archive:
+            for ep in episodic_hits:
+                archive_windows.extend(
+                    memory.get_episode_representative_windows(
+                        ep, radius=neighbor_radius
+                    )
+                )
 
         pinned: List[WindowEntry] = []
         if pin_recent_n > 0 and recent:

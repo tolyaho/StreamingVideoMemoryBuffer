@@ -1,0 +1,7 @@
+name: streamingbench
+manifest: data/eval_manifest_50.json
+id_field: sample_id
+records_glob: "sample_*.jsonl"
+limit: null
+samples: []
+keys: []

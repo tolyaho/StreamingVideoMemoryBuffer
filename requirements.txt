@@ -16,6 +16,7 @@ jupyterlab
 datasets
 huggingface_hub
 yt-dlp
+hydra-core>=1.3
 ipywidgets
 
 einops

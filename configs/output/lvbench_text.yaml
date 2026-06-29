@@ -1,0 +1,3 @@
+dir: outputs/lvbench_text
+resume: false
+summary_title: LVBench text eval
