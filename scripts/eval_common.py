@@ -159,6 +159,7 @@ def answer_hierarchical(
     formatter: ReasonerInputFormatter,
     reasoner: Reasoner,
     cfg: EvalConfig,
+    observer=None,
 ) -> dict:
     memory.flush_pending()
     q_emb = encoder.encode_text(qa["question"])
@@ -180,6 +181,8 @@ def answer_hierarchical(
         include_coarse=cfg.include_coarse_text,
         include_episodic=cfg.include_episodic_text,
     )
+    if observer is not None:
+        observer.on_retrieval(qa, stream_time, result, llm_input, memory)
     prediction = reasoner.answer(
         llm_input, options=qa.get("options"), retrieval=result
     )
@@ -200,6 +203,8 @@ def answer_baseline(
     formatter: ReasonerInputFormatter,
     reasoner: Reasoner,
     cfg: EvalConfig,
+    observer=None,
+    stream_time: float | None = None,
 ) -> dict:
     q_emb = encoder.encode_text(qa["question"])
     hits = baseline.retrieve(q_emb, top_k=cfg.baseline_k)
@@ -220,6 +225,8 @@ def answer_baseline(
         include_coarse=cfg.include_coarse_text,
         include_episodic=cfg.include_episodic_text,
     )
+    if observer is not None:
+        observer.on_baseline(qa, stream_time, result, llm_input)
     prediction = reasoner.answer(
         llm_input, options=qa.get("options"), retrieval=result
     )
@@ -245,6 +252,7 @@ def process_due_qas(
     reasoner: Reasoner,
     records: list[dict],
     cfg: EvalConfig,
+    observer=None,
 ) -> int:
     while cursor < len(qas) and qas[cursor]["t_seconds"] <= stream_time:
         qa = qas[cursor]
@@ -257,13 +265,15 @@ def process_due_qas(
             "stream_time": stream_time,
             "options": qa.get("options"),
             "hierarchical": answer_hierarchical(
-                qa, stream_time, memory, encoder, retriever, formatter, reasoner, cfg
+                qa, stream_time, memory, encoder, retriever, formatter, reasoner, cfg, observer
             ),
             "baseline": answer_baseline(
-                qa, encoder, baseline, formatter, reasoner, cfg
+                qa, encoder, baseline, formatter, reasoner, cfg, observer, stream_time
             ),
         }
         records.append(row)
+        if observer is not None:
+            observer.on_question(row)
         cursor += 1
     return cursor
 
@@ -279,6 +289,7 @@ def run_video(
     reasoner: Reasoner,
     cfg: EvalConfig = NOTEBOOK_CONFIG,
     extra_meta: dict | None = None,
+    observer=None,
 ) -> tuple[list[dict], dict]:
     qas = load_qas(qas_path)
     reader = StreamReader(fps=cfg.fps, window_duration=cfg.window_duration)
@@ -299,6 +310,7 @@ def run_video(
     records: list[dict] = []
     cursor = 0
     n_windows = 0
+    last_stream_time = 0.0
     t0 = time.perf_counter()
 
     for raw in reader.read_windows(str(video_path)):
@@ -310,15 +322,22 @@ def run_video(
         memory.update(entry)
         baseline.update(entry)
         n_windows += 1
+        last_stream_time = raw.end_time
+        if observer is not None:
+            observer.on_memory(raw.end_time, memory)
         cursor = process_due_qas(
             qas, cursor, raw.end_time,
-            memory, baseline, encoder, retriever, formatter, reasoner, records, cfg,
+            memory, baseline, encoder, retriever, formatter, reasoner, records, cfg, observer,
         )
 
+    if observer is not None and cursor < len(qas):
+        raise ValueError("Demo trace cannot answer questions beyond the available source video")
     memory.finalize()
+    if observer is not None:
+        observer.on_memory(last_stream_time, memory, phase="finalize")
     cursor = process_due_qas(
         qas, cursor, float("inf"),
-        memory, baseline, encoder, retriever, formatter, reasoner, records, cfg,
+        memory, baseline, encoder, retriever, formatter, reasoner, records, cfg, observer,
     )
     elapsed = time.perf_counter() - t0
     meta = {

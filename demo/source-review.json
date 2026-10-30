@@ -1,0 +1,22 @@
+{
+  "reviewed_on": "2026-10-30",
+  "case_id": "streamingbench/sample_36",
+  "dataset": "mjuicem/StreamingBench",
+  "dataset_revision": "48872fa707124474ce4c5172ddc58efb8bc88058",
+  "archive": "Real-Time Visual Understanding_1-50.zip",
+  "member": "sample_36/video.mp4",
+  "source_sha256": "120287733650bed8258e7a1af0f2737e14a3c6a855b7eecef7367117a4ed453f",
+  "source_bytes": 378382976,
+  "source_duration_seconds": 1026.391655,
+  "spot_checked_seconds": [494, 533, 534, 535, 536, 575, 602],
+  "visual_finding": "A light wooden-looking stirring utensil is visible at the cited earlier interval and at question time. It is also visible in recent context. This is consistent with the dataset label, but does not establish exact material, actual retrieval, or the necessity of historical evidence.",
+  "rights_status": "unverified",
+  "original_creator_identity": "not established from source metadata",
+  "rights_sources_checked": [
+    "https://huggingface.co/datasets/mjuicem/StreamingBench/blob/main/README.md",
+    "https://huggingface.co/datasets/ngqtrung/StreamingBench/blob/main/README.md",
+    "https://github.com/THUNLP-MT/StreamingBench"
+  ],
+  "rights_finding": "Neither checked dataset card states a video redistribution grant. The upstream repository's code license is not evidence of permission to redistribute this footage. The inspected MP4 contains no title/copyright/source metadata resolving ownership.",
+  "distribution": "No source video or extracted frame is included in demo/web, outputs, or the recording. Private inspection files remain outside the repository."
+}

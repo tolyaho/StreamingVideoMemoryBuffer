@@ -1,0 +1,11 @@
+predictions identical : False
+window captions         : 89 vs 89 entries, 89 shared keys, 0 differ
+episode captions        : 23 vs 32 entries, 23 shared keys, 15 differ
+event summaries         : 6 vs 6 entries, 6 shared keys, 5 differ
+decisions               : identical=True
+retrieval hits/scores   : identical=False
+memory stats per window : identical=True
+  bbb_q1_burrow hier C -> C | base C -> C
+  bbb_q2_apple hier C -> C | base D -> D
+  bbb_q3_butterfly hier D -> B | base B -> B
+  bbb_q4_bow hier D -> D | base D -> D

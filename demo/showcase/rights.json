@@ -1,0 +1,14 @@
+{
+  "source_sha256": "3435542701c60cf8593199f532a6a6ee76c50cfa7b131756aeba2e823a524712",
+  "redistribution": "cleared",
+  "basis": "Big Buck Bunny (Peach open movie project) is licensed under Creative Commons Attribution 3.0 by the Blender Foundation. Its license page allows reuse of parts of the movie with the attribution '(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org'. Logos and trademarks are excluded; this excerpt starts after the title card and contains no logo.",
+  "license": "CC BY 3.0",
+  "license_url": "https://creativecommons.org/licenses/by/3.0/",
+  "attribution": "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org",
+  "source_url": "https://peach.blender.org/about/",
+  "download_url": "https://download.blender.org/peach/bigbuckbunny_movies/big_buck_bunny_720p_h264.mov.zip",
+  "original_sha256": {"zip": "b0c9ade80b086179feee41514929de583966eec87c703575d97f051f88b33b67", "mov": "45c8bafeb9a53df7f491198d2e71529701bcf1cd51805782089fac1d32869f9b"},
+  "changes": "Excerpt of film time 0:33.000-4:59.000 (266 s); audio removed; re-encoded to VP9/WebM 1280x720 at 24 fps (CRF 31). No other edits.",
+  "verified_by": "License text read from https://peach.blender.org/about/ on 2026-10-30. A human should re-confirm before publication.",
+  "source_start_seconds": 0
+}

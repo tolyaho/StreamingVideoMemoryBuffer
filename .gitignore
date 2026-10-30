@@ -71,6 +71,7 @@ huggingface/
 !/data/
 !/data/**/
 !/data/**/*qas*.jsonl
+!/data/eval_manifest_50.json
 
 # Logs
 *.log

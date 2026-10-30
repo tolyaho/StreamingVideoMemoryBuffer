@@ -1,0 +1,14 @@
+{
+  "written_before_inference": "2026-10-30",
+  "annotator": "Claude Code (frame inspection at 1 fps of the official Big Buck Bunny 720p master); review by the project owner pending",
+  "stimulus": "bbb-excerpt-0033-0459.webm",
+  "stimulus_to_film_offset_seconds": 33.0,
+  "focus_question_id": "bbb_q3_butterfly",
+  "secondary_long_range_question_id": "bbb_q2_apple",
+  "questions": {
+    "bbb_q1_burrow": {"answer": "C", "evidence_stimulus_seconds": [[0, 22]], "evidence_film": "0:33-0:55 rabbit sleeps in, then climbs out of, a burrow under a grassy mound", "kind": "recent (inside the 60 s recent window)"},
+    "bbb_q2_apple": {"answer": "B", "evidence_stimulus_seconds": [[51, 63]], "evidence_film": "1:24-1:36 red apple lies in the grass, rabbit picks it up and holds it", "kind": "long-range: evidence ends ~80 s before the question, outside a 20 x 3 s recent window", "later_related_content": "none before the question (apples are thrown at the rabbit at film 2:58-3:11, after this question)"},
+    "bbb_q3_butterfly": {"answer": "D", "evidence_stimulus_seconds": [[73, 75], [94, 104]], "evidence_film": "1:46-1:48 a purple butterfly lands on the rabbit's head; 2:07-2:17 it hovers on and just above his head by the tree", "kind": "long-range: evidence ends ~150 s before the question", "later_related_content": "film 3:06-3:39 (stimulus 153-186 s): the rodents threaten and catch the butterfly; it is not on the rabbit's head there, but it is butterfly content outside the recent window"},
+    "bbb_q4_bow": {"answer": "A", "evidence_stimulus_seconds": [[259, 266]], "evidence_film": "4:52-4:58 rabbit draws a wooden bow with an arrow", "kind": "real-time"}
+  }
+}

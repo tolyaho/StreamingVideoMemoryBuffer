@@ -1,0 +1,5 @@
+# Private or large local artifacts: captured traces, inspection media, recordings, the showcase clip.
+local/
+recordings/
+node_modules/
+showcase/media/

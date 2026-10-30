@@ -1,0 +1,38 @@
+{
+  "sample_id": "bbb-excerpt-0033-0459",
+  "video": "bbb-excerpt-0033-0459.webm",
+  "qas": [
+    {
+      "question_id": "bbb_q1_burrow",
+      "task_type": "Event Understanding (recent)",
+      "question": "What did the big rabbit just come out of?",
+      "time_stamp": "00:00:19",
+      "answer": "C",
+      "options": ["A. A hollow log.", "B. A wooden barn.", "C. A burrow in a grassy hillside.", "D. A pond."]
+    },
+    {
+      "question_id": "bbb_q2_apple",
+      "task_type": "Object Recall (long-range)",
+      "question": "Earlier in the video, what did the big rabbit pick up from the grass and hold?",
+      "time_stamp": "00:02:23",
+      "answer": "B",
+      "options": ["A. A pine cone.", "B. A red apple.", "C. A white flower.", "D. A carrot."]
+    },
+    {
+      "question_id": "bbb_q3_butterfly",
+      "task_type": "Event Recall (long-range)",
+      "question": "Earlier in the video, what landed on top of the big rabbit's head?",
+      "time_stamp": "00:04:17",
+      "answer": "D",
+      "options": ["A. A green leaf.", "B. A small bird.", "C. A spider.", "D. A butterfly."]
+    },
+    {
+      "question_id": "bbb_q4_bow",
+      "task_type": "Object Perception (real-time)",
+      "question": "What is the big rabbit holding right now?",
+      "time_stamp": "00:04:22",
+      "answer": "A",
+      "options": ["A. A bow and arrow.", "B. A red apple.", "C. A fishing rod.", "D. An umbrella."]
+    }
+  ]
+}

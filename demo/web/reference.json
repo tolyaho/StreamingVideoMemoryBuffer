@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "mode": "evaluation_reference",
+  "case_id": "streamingbench/sample_36",
+  "title": "Streaming Video Memory",
+  "sample_id": 36,
+  "model": "Qwen/Qwen2.5-3B-Instruct",
+  "config": "notebook",
+  "clock_end": 1026.391655,
+  "focus_question_id": "Real-Time Visual Understanding_sample_36_4",
+  "records": [
+    {
+      "question_id": "Real-Time Visual Understanding_sample_36_1",
+      "task_type": "Attribute Perception",
+      "question": "What color are the kitchen cupboards?",
+      "time_stamp": "00:03:22",
+      "t_seconds": 202.0,
+      "stream_time": 203.04,
+      "options": [
+        "A. Dark blue.",
+        "B. Light green.",
+        "C. White.",
+        "D. Yellow."
+      ],
+      "hierarchical": {
+        "prediction": "C. White.\nThe kitchen cupboards are white based on the evidence from [128.0–131.0s], where a man is seen holding a frying pan in a kitchen setting, and the kitchen features white cabinets, marble countertops, and various kitchen appliances and utensils.",
+        "pred_letter": "C",
+        "ground_truth": "B",
+        "correct": false,
+        "citations": [
+          {
+            "start": 128.0,
+            "end": 131.0,
+            "basis": "model_output_only"
+          }
+        ]
+      },
+      "baseline": {
+        "prediction": "C. White.\n[188.0–191.0s] sim=0.201  A man standing in a kitchen preparing food on a counter. This sentence suggests a white countertop, which is often associated with white kitchen cupboards.",
+        "pred_letter": "C",
+        "ground_truth": "B",
+        "correct": false,
+        "citations": [
+          {
+            "start": 188.0,
+            "end": 191.0,
+            "basis": "model_output_only"
+          }
+        ]
+      }
+    },
+    {
+      "question_id": "Real-Time Visual Understanding_sample_36_2",
+      "task_type": "Action Perception",
+      "question": "What is the person doing with the box grater?",
+      "time_stamp": "00:03:27",
+      "t_seconds": 207.0,
+      "stream_time": 209.04,
+      "options": [
+        "A. Slicing bread.",
+        "B. Chopping vegetables.",
+        "C. Peeling potatoes.",
+        "D. Grating a yellow ingredient."
+      ],
+      "hierarchical": {
+        "prediction": "D. Grating a yellow ingredient.\n[146.0–149.0s] sim=0.180  Episode 146.0–149.0s The time range directly shows a man standing in a kitchen with a grater in his hand, implying he is using a grater, which aligns with option D.",
+        "pred_letter": "D",
+        "ground_truth": "D",
+        "correct": true,
+        "citations": [
+          {
+            "start": 146.0,
+            "end": 149.0,
+            "basis": "model_output_only"
+          }
+        ]
+      },
+      "baseline": {
+        "prediction": "D. Sim=0.240 A man grating an orange on a grater in a kitchen. The evidence directly mentions someone using a grater to grate an orange, which aligns with option D.",
+        "pred_letter": "D",
+        "ground_truth": "D",
+        "correct": true,
+        "citations": []
+      }
+    },
+    {
+      "question_id": "Real-Time Visual Understanding_sample_36_3",
+      "task_type": "Object Perception",
+      "question": "What is the person in a blue shirt chopping on the wooden cutting board?",
+      "time_stamp": "00:06:42",
+      "t_seconds": 402.0,
+      "stream_time": 404.04,
+      "options": [
+        "A. Red bell pepper.",
+        "B. Carrots.",
+        "C. Green bell pepper.",
+        "D. Onions."
+      ],
+      "hierarchical": {
+        "prediction": "D. The person in a blue shirt is chopping onions on the wooden cutting board based on the evidence from [335.0–338.0s] and [338.0–341.0s].",
+        "pred_letter": "D",
+        "ground_truth": "A",
+        "correct": false,
+        "citations": [
+          {
+            "start": 335.0,
+            "end": 338.0,
+            "basis": "model_output_only"
+          },
+          {
+            "start": 338.0,
+            "end": 341.0,
+            "basis": "model_output_only"
+          }
+        ]
+      },
+      "baseline": {
+        "prediction": "D\nThe person in a blue shirt is chopping onions as evidenced by the statement \"A man in a blue shirt is preparing food in a kitchen\" at [383.0–386.0s], which closely aligns with the action of chopping onions mentioned in the query.",
+        "pred_letter": "D",
+        "ground_truth": "A",
+        "correct": false,
+        "citations": [
+          {
+            "start": 383.0,
+            "end": 386.0,
+            "basis": "model_output_only"
+          }
+        ]
+      }
+    },
+    {
+      "question_id": "Real-Time Visual Understanding_sample_36_4",
+      "task_type": "Object Perception",
+      "question": "What is the person holding right now?",
+      "time_stamp": "00:10:02",
+      "t_seconds": 602.0,
+      "stream_time": 602.04,
+      "options": [
+        "A. A wooden spoon.",
+        "B. A metal spatula.",
+        "C. A whisk.",
+        "D. A ladle."
+      ],
+      "hierarchical": {
+        "prediction": "A. A wooden spoon.\nI used the time range [533.0–536.0s] where a man in a blue shirt is cooking food in a pan on a stove, and his right hand is holding a wooden spoon.",
+        "pred_letter": "A",
+        "ground_truth": "A",
+        "correct": true,
+        "citations": [
+          {
+            "start": 533.0,
+            "end": 536.0,
+            "basis": "model_output_only"
+          }
+        ]
+      },
+      "baseline": {
+        "prediction": "B. A metal spatula.\n[575.0–578.0s] sim=0.169  A man in a blue shirt is preparing food in a pan. This sentence directly mentions a man preparing food in a pan, which strongly suggests he might be using a metal spatula for the task.",
+        "pred_letter": "B",
+        "ground_truth": "A",
+        "correct": false,
+        "citations": [
+          {
+            "start": 575.0,
+            "end": 578.0,
+            "basis": "model_output_only"
+          }
+        ]
+      }
+    },
+    {
+      "question_id": "Real-Time Visual Understanding_sample_36_5",
+      "task_type": "Object Perception",
+      "question": "What is the person holding in the right hand right now?",
+      "time_stamp": "00:13:19",
+      "t_seconds": 799.0,
+      "stream_time": 800.04,
+      "options": [
+        "A. A pen.",
+        "B. A ladle.",
+        "C. A pan.",
+        "D. A rolling pin."
+      ],
+      "hierarchical": {
+        "prediction": "C. A pan.\n[797.0–800.0s] sim=0.315  A man holding a frying pan in a kitchen.",
+        "pred_letter": "C",
+        "ground_truth": "C",
+        "correct": true,
+        "citations": [
+          {
+            "start": 797.0,
+            "end": 800.0,
+            "basis": "model_output_only"
+          }
+        ]
+      },
+      "baseline": {
+        "prediction": "C. A pan.\n[782.0–785.0s] sim=0.191  A man in a blue shirt is cooking food in a pan. This sentence directly states that a man is cooking food in a pan, which implies he is likely holding a pan in his right hand.",
+        "pred_letter": "C",
+        "ground_truth": "C",
+        "correct": true,
+        "citations": [
+          {
+            "start": 782.0,
+            "end": 785.0,
+            "basis": "model_output_only"
+          }
+        ]
+      }
+    }
+  ],
+  "nodes": {},
+  "snapshots": [],
+  "retrievals": [],
+  "media": {
+    "available": false,
+    "status": "rights_unverified",
+    "source_sha256": "120287733650bed8258e7a1af0f2737e14a3c6a855b7eecef7367117a4ed453f",
+    "reason": "Source footage is not cleared for redistribution. No video is bundled."
+  },
+  "provenance": {
+    "prediction_kind": "previously_saved_model_output",
+    "memory_trace": "not_saved",
+    "retrieval_trace": "not_saved",
+    "evidence_visual_check": "private_spot_check_not_a_retrieval_trace",
+    "source_files": [
+      {
+        "path": "results/streamingbench_text_3b_notebook/per_video/sample_36.jsonl",
+        "sha256": "4c0a70769a7fbfe8cb16991c44917c162916c831834d1f69324c1645031e2131"
+      },
+      {
+        "path": "results/streamingbench_text_3b_notebook/run_config.json",
+        "sha256": "10714062b5de1e266beaa60f40a7b132baa84096d491f9de141d26d63b7c4223"
+      },
+      {
+        "path": "results/streamingbench_text_3b_notebook/run_log.jsonl",
+        "sha256": "4d05a34ecd1f93d06c4225979b15f1815effbeb9306e70bf3b7cd8d54a5c4bce"
+      },
+      {
+        "path": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_36/qas.json",
+        "sha256": "61486e0b524c6d6edf6477411db93416cd399b90a4e8e8905ba51dd7bf2b5fba"
+      },
+      {
+        "path": "demo/source-review.json",
+        "sha256": "9049192dad1da425f149575bd73c4ecba4fe153d4c4e96126469366d340b501e"
+      }
+    ],
+    "citation_warning": "Model-cited times are unverified claims in the saved answer; they are not retrieved evidence.",
+    "run_totals": {
+      "n_windows": 343,
+      "n_qas": 5,
+      "hier_correct": 3,
+      "base_correct": 2
+    },
+    "visual_review": "A light wooden-looking stirring utensil is visible at the cited earlier interval and at question time. It is also visible in recent context. This is consistent with the dataset label, but does not establish exact material, actual retrieval, or the necessity of historical evidence."
+  }
+}

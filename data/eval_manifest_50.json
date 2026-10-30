@@ -1,0 +1,252 @@
+[
+  {
+    "sample_id": 1,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_1/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_1/qas.json"
+  },
+  {
+    "sample_id": 2,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_2/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_2/qas.json"
+  },
+  {
+    "sample_id": 3,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_3/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_3/qas.json"
+  },
+  {
+    "sample_id": 4,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_4/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_4/qas.json"
+  },
+  {
+    "sample_id": 5,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_5/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_5/qas.json"
+  },
+  {
+    "sample_id": 6,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_6/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_6/qas.json"
+  },
+  {
+    "sample_id": 7,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_7/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_7/qas.json"
+  },
+  {
+    "sample_id": 8,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_8/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_8/qas.json"
+  },
+  {
+    "sample_id": 9,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_9/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_9/qas.json"
+  },
+  {
+    "sample_id": 10,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_10/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_10/qas.json"
+  },
+  {
+    "sample_id": 11,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_11/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_11/qas.json"
+  },
+  {
+    "sample_id": 12,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_12/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_12/qas.json"
+  },
+  {
+    "sample_id": 13,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_13/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_13/qas.json"
+  },
+  {
+    "sample_id": 14,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_14/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_14/qas.json"
+  },
+  {
+    "sample_id": 15,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_15/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_15/qas.json"
+  },
+  {
+    "sample_id": 16,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_16/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_16/qas.json"
+  },
+  {
+    "sample_id": 17,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_17/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_17/qas.json"
+  },
+  {
+    "sample_id": 18,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_18/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_18/qas.json"
+  },
+  {
+    "sample_id": 19,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_19/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_19/qas.json"
+  },
+  {
+    "sample_id": 20,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_20/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_20/qas.json"
+  },
+  {
+    "sample_id": 21,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_21/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_21/qas.json"
+  },
+  {
+    "sample_id": 22,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_22/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_22/qas.json"
+  },
+  {
+    "sample_id": 23,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_23/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_23/qas.json"
+  },
+  {
+    "sample_id": 24,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_24/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_24/qas.json"
+  },
+  {
+    "sample_id": 25,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_25/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_25/qas.json"
+  },
+  {
+    "sample_id": 26,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_26/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_26/qas.json"
+  },
+  {
+    "sample_id": 27,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_27/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_27/qas.json"
+  },
+  {
+    "sample_id": 28,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_28/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_28/qas.json"
+  },
+  {
+    "sample_id": 29,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_29/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_29/qas.json"
+  },
+  {
+    "sample_id": 30,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_30/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_30/qas.json"
+  },
+  {
+    "sample_id": 31,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_31/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_31/qas.json"
+  },
+  {
+    "sample_id": 32,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_32/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_32/qas.json"
+  },
+  {
+    "sample_id": 33,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_33/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_33/qas.json"
+  },
+  {
+    "sample_id": 34,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_34/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_34/qas.json"
+  },
+  {
+    "sample_id": 35,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_35/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_35/qas.json"
+  },
+  {
+    "sample_id": 36,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_36/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_36/qas.json"
+  },
+  {
+    "sample_id": 37,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_37/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_37/qas.json"
+  },
+  {
+    "sample_id": 38,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_38/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_38/qas.json"
+  },
+  {
+    "sample_id": 39,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_39/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_39/qas.json"
+  },
+  {
+    "sample_id": 40,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_40/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_40/qas.json"
+  },
+  {
+    "sample_id": 41,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_41/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_41/qas.json"
+  },
+  {
+    "sample_id": 42,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_42/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_42/qas.json"
+  },
+  {
+    "sample_id": 43,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_43/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_43/qas.json"
+  },
+  {
+    "sample_id": 44,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_44/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_44/qas.json"
+  },
+  {
+    "sample_id": 45,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_45/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_45/qas.json"
+  },
+  {
+    "sample_id": 46,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_46/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_46/qas.json"
+  },
+  {
+    "sample_id": 47,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_47/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_47/qas.json"
+  },
+  {
+    "sample_id": 48,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_48/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_48/qas.json"
+  },
+  {
+    "sample_id": 49,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_49/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_49/qas.json"
+  },
+  {
+    "sample_id": 50,
+    "video": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_50/video.mp4",
+    "qas": "data/streamingbench/Real_Time_Visual_Understanding/shard_1_50/sample_50/qas.json"
+  }
+]

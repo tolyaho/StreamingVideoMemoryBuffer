@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark"><title>SVMB · Streaming Video Memory · recorded run</title>
+  <link rel="icon" href="data:,"><link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/" aria-label="Streaming Video Memory, reload">
+      <span class="glyph" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="brand-name">SVMB</span><span class="brand-sub">Streaming Video Memory</span>
+    </a>
+    <div class="runs" id="runs" role="radiogroup" aria-label="Recorded run" hidden></div>
+    <div class="bar-right">
+      <span class="pill" id="mode-pill"><span class="dot" aria-hidden="true"></span><span id="mode-text">Recorded run · no live inference</span></span>
+      <button class="ghost" id="prov-open" type="button">Provenance</button>
+    </div>
+  </header>
+
+  <main class="stage">
+    <section class="left" aria-label="Source video and memory timeline">
+      <div class="viewport" id="viewport">
+        <video id="video" muted playsinline preload="auto" aria-label="Source video processed in this recorded run"></video>
+        <div class="nomedia" id="nomedia" hidden>
+          <div class="nomedia-inner"><span class="eyebrow" id="nomedia-eyebrow">Source video not attached</span><h2 id="nomedia-title">Video unavailable</h2><p id="nomedia-text"></p></div>
+        </div>
+        <div class="vp-top">
+          <span class="tc"><span class="tc-label" id="tc-label">Stream</span><span class="mono" id="tc">00:00.00</span></span>
+          <span class="credit" id="credit"></span>
+        </div>
+        <div class="vp-title" id="vp-title" aria-live="polite"></div>
+        <div class="vp-sub" id="vp-sub" hidden></div>
+        <div class="vp-question" id="vp-question" hidden><span class="eyebrow" id="vpq-meta"></span><p id="vpq-text"></p></div>
+        <div class="vp-evidence" id="vp-evidence" hidden></div>
+        <div class="vp-verdicts" id="vpq-answers" hidden>
+            <div class="vpa h" id="vpa-h"><span class="eyebrow">SVMB · hierarchical memory</span><b class="serif" id="vpa-h-t"></b><span class="verdict" id="vpa-h-v"></span></div>
+            <div class="vpa b" id="vpa-b"><span class="eyebrow">Recent-only baseline · last 60 s</span><b class="serif" id="vpa-b-t"></b><span class="verdict" id="vpa-b-v"></span></div>
+          </div>
+
+        <div class="vp-caption" id="vp-caption"><span class="eyebrow" id="cap-meta">Window caption</span><p id="cap-text"></p></div>
+      </div>
+
+      <div class="ribbon-wrap">
+        <svg class="ribbon" id="ribbon" role="slider" tabindex="0" aria-label="Stream timeline and memory state; click or use arrow keys to seek" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></svg>
+        <div class="tip" id="tip" hidden></div>
+      </div>
+
+      <div class="transport">
+        <button class="play" id="play" type="button" aria-label="Play">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path id="play-icon" d="M6 4l10 6-10 6z"/></svg>
+        </button>
+        <div class="speeds" role="radiogroup" aria-label="Playback speed" id="speeds"></div>
+        <div class="chips" id="chips" aria-label="Questions in this run"></div>
+        <button class="tour" id="tour" type="button">Guided tour <span aria-hidden="true">→</span></button>
+      </div>
+    </section>
+
+    <aside class="right" aria-label="Memory and assistant">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-memory" aria-selected="true" type="button">Memory</button>
+        <button role="tab" id="tab-ask" aria-selected="false" type="button">Ask <span class="tab-badge" id="ask-badge" hidden></span></button>
+      </div>
+
+      <div class="pane" id="pane-memory" role="tabpanel" aria-labelledby="tab-memory">
+        <section class="tier t-recent">
+          <header><span class="swatch" aria-hidden="true"></span><h3>Recent</h3><span class="count mono" id="recent-count">—</span><span class="hint" id="recent-hint">last 60 s, raw windows</span></header>
+          <div class="film" id="recent"></div>
+        </section>
+        <div class="flow" id="flow-1"><span class="flow-line" aria-hidden="true"></span><span id="flow-1-text">evicted windows kept if novel</span></div>
+        <section class="tier t-episodic">
+          <header><span class="swatch" aria-hidden="true"></span><h3>Episodic</h3><span class="count mono" id="episodic-count">—</span><span class="hint">promoted windows grouped into episodes</span></header>
+          <div class="cards" id="episodic"></div>
+        </section>
+        <div class="flow" id="flow-2"><span class="flow-line" aria-hidden="true"></span><span id="flow-2-text">oldest similar episodes consolidated</span></div>
+        <section class="tier t-events">
+          <header><span class="swatch" aria-hidden="true"></span><h3>Long-term</h3><span class="count mono" id="events-count">—</span><span class="hint">events with a VLM summary</span></header>
+          <div class="cards" id="events"></div>
+        </section>
+      </div>
+
+      <div class="pane" id="pane-ask" role="tabpanel" aria-labelledby="tab-ask" hidden>
+        <div class="ask-empty" id="ask-empty"><p class="serif">No question yet at this point in the stream.</p><p class="muted">Questions appear only once the run has answered them. Pick one below the video.</p></div>
+        <div id="ask-body" hidden>
+          <section class="q">
+            <span class="eyebrow" id="q-meta"></span>
+            <h2 class="serif" id="q-text"></h2>
+            <ol class="options" id="q-options"></ol>
+          </section>
+          <section class="retrieved">
+            <header><span class="eyebrow">Retrieved by the hierarchical memory</span><span class="eyebrow faint" id="ret-note"></span></header>
+            <div id="ret-list"></div>
+          </section>
+          <section class="answers">
+            <article class="answer svmb" id="ans-h"><header><span class="eyebrow">SVMB · hierarchical memory</span><span class="verdict" id="ans-h-v"></span></header><p class="letter serif" id="ans-h-l"></p><p class="why" id="ans-h-why"></p></article>
+            <article class="answer base" id="ans-b"><header><span class="eyebrow">Recent-only baseline · same model</span><span class="verdict" id="ans-b-v"></span></header><p class="letter serif" id="ans-b-l"></p><p class="why" id="ans-b-why"></p></article>
+            <p class="gt" id="gt"></p>
+          </section>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="foot"><span id="foot-left"></span><span id="foot-right">One recorded case study. Not a benchmark result.</span></footer>
+
+  <dialog id="prov"><div class="prov-head"><div><span class="eyebrow">Every element has a source</span><h2 class="serif">What you are seeing</h2></div><button id="prov-close" class="ghost" type="button" aria-label="Close provenance">Close</button></div><div id="prov-body"></div></dialog>
+  <div id="error" role="alert" hidden></div>
+  <script type="module" src="/app.mjs"></script>
+</body>
+</html>

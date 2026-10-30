@@ -1,0 +1,6 @@
+{
+  "name": "svmb-recorded-demo",
+  "private": true,
+  "scripts": {"test": "node --test tests/timeline.test.mjs", "record": "node record.cjs"},
+  "devDependencies": {"playwright": "1.64.1"}
+}
